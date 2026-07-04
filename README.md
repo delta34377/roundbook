@@ -92,6 +92,16 @@ with your login session token; the function accepts it only when the token's
 email matches `OWNER_EMAIL` (secret, defaults to the owner's address), so no
 secret key ever reaches the browser and nobody else can trigger it.
 
+## Using it
+
+- **Sync button** (top right): pulls the latest rounds from Arccos on demand;
+  the nightly schedule is the backstop.
+- **The link remembers your view**: the tab and course filter live in the URL
+  (e.g. `#tab=tiger5&course=Birchwood%20CC`), so bookmarks and reopened tabs
+  land where you left off.
+- **Add it to your phone's home screen** (iPhone: Share -> Add to Home Screen)
+  and it opens full-screen with its own icon, like a native app.
+
 ## Verification
 
 - `node --experimental-strip-types web/scripts/verify-derive-parity.mjs` -

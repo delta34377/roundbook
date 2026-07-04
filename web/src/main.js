@@ -9,6 +9,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { initRoundBook } from './engine.js'
 import { RB_BODY_HTML } from './bodyHtml.js'
+import { wireDeepLinks } from './deepLinks.js'
 import './roundbook.css'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -16,15 +17,21 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const app = document.getElementById('app')
 
 let destroyEngine = null
+let destroyDeepLinks = null
 
 function setView(html) {
   if (destroyEngine) {
     destroyEngine()
     destroyEngine = null
   }
+  if (destroyDeepLinks) {
+    destroyDeepLinks()
+    destroyDeepLinks = null
+  }
   app.innerHTML = html
   return app
 }
+
 
 function showConfigError() {
   setView(
@@ -144,6 +151,7 @@ async function loadDashboard(supabase) {
   const host = document.getElementById('rb-host')
   host.innerHTML = RB_BODY_HTML
   destroyEngine = initRoundBook(host, data.data)
+  destroyDeepLinks = wireDeepLinks(host)
 }
 
 // The Sync button calls the arccos-sync function with the logged-in session

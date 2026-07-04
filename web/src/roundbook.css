@@ -243,3 +243,12 @@
 .rb-sync{background:#1b2e24;border:1px solid #4ea87a;color:#7fd3a4;font:inherit;font-size:12.5px;padding:6px 12px;border-radius:8px;cursor:pointer;transition:.12s}
 .rb-sync:hover{background:#4ea87a;color:#08130d}
 .rb-sync:disabled{opacity:.6;cursor:default}
+/* Mobile navigation: the ten tabs scroll in one row instead of wrapping into
+   a pile; slightly bigger touch targets; sliders narrow enough to share a row.
+   Mirrored in build_dash.py's CSS so the standalone HTML matches. */
+@media(max-width:700px){
+  .rb-scope .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-left:-20px;margin-right:-20px;padding:0 20px}
+  .rb-scope .tabs::-webkit-scrollbar{display:none}
+  .rb-scope .tab{white-space:nowrap;flex:0 0 auto;padding:12px 13px}
+  .rb-scope .rangewrap input[type=range]{width:110px}
+}

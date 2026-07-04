@@ -212,6 +212,15 @@ table.sc td:first-child,table.sc th:first-child{text-align:left}
 .bench-badge.behind{color:#f08a82;background:rgba(227,90,80,.14)}
 .bench-summary{font-size:12.5px;color:var(--muted);margin:15px 0 0;line-height:1.6}
 @media(max-width:680px){.bench-head{grid-template-columns:108px 42px 1fr 42px}.bench-row{grid-template-columns:108px 42px 1fr 42px}.bench-badge{display:none}.bench-name{font-size:12px}}
+
+/* Mobile navigation: tabs scroll in one row instead of wrapping. Mirrored in
+   the web app's roundbook.css - keep the two in step. */
+@media(max-width:700px){
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-left:-20px;margin-right:-20px;padding:0 20px}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{white-space:nowrap;flex:0 0 auto;padding:12px 13px}
+  .rangewrap input[type=range]{width:110px}
+}
 </style></head><body>
 <div class="wrap">
   <header class="mast">
@@ -263,7 +272,7 @@ table.sc td:first-child,table.sc th:first-child{text-align:left}
     </div>
     <div class="grid">
       <div class="card"><h4>Scorecard shape</h4><p class="cap">Every hole by result, in the current filter.</p><div class="chartbox" style="height:230px"><canvas id="dist"></canvas></div></div>
-      <div class="card"><h4>Where strokes go</h4><p class="cap">Arccos category handicap (all rounds) — lower is better.</p><div class="chartbox" style="height:230px"><canvas id="cats"></canvas></div></div>
+      <div class="card"><h4>Arccos grades your game</h4><p class="cap">Arccos's own category handicaps — account-wide, untouched by your filters (the export can't rebuild them). Lower is better.</p><div class="chartbox" style="height:230px"><canvas id="cats"></canvas></div></div>
       <div class="card"><h4>Scoring, round by round</h4><p class="cap">Each round scaled to an 18-hole pace.</p><div class="chartbox" style="height:220px"><canvas id="trend"></canvas></div></div>
       <div class="card"><h4>By par type</h4><p class="cap">Strokes over par.</p><div class="chartbox" style="height:220px"><canvas id="parc"></canvas></div></div>
     </div>
