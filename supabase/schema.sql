@@ -49,7 +49,7 @@ revoke all on table public.roundbook_raw_rounds from anon, authenticated;
 -- Scheduling the sync (run once, after deploying the arccos-sync function and
 -- setting its secrets — full steps in README.md):
 --
---   supabase secrets set ARCCOS_EMAIL=... ARCCOS_PASSWORD=...
+--   supabase secrets set ARCCOS_EMAIL=... ARCCOS_PASSWORD=... SYNC_KEY=<secret key>
 --   supabase functions deploy arccos-sync
 --
 -- Then enable the pg_cron and pg_net extensions (Dashboard > Database >

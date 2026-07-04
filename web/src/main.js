@@ -127,7 +127,7 @@ async function loadDashboard(supabase) {
   }
 
   const updated = data.updated_at
-    ? 'Data updated ' +
+    ? 'Last sync ' +
       new Date(data.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : ''
   setView(

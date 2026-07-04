@@ -8,9 +8,10 @@
 // CLAUDE.md rule 6: the dashboard uses Mark's real index, never
 // Arccos's internal userHcp).
 //
-// Auth: callable only with the service role key as the bearer (the pg_cron
-// schedule in supabase/schema.sql sends it from Vault). The anon
-// key is deliberately rejected so visitors cannot trigger Arccos traffic.
+// Auth: callable only with the sync key as the bearer (the pg_cron schedule
+// in supabase/schema.sql sends it from Vault; set the same value as the
+// SYNC_KEY function secret). Public keys are rejected so visitors cannot
+// trigger Arccos traffic.
 //
 // Behavior per run:
 //   - fetch the full rounds list (newest first)
@@ -35,10 +36,15 @@ const json = (status: number, body: unknown) =>
   });
 
 Deno.serve(async (req) => {
-  const svcKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  // Callers must present the sync key: the SYNC_KEY secret if set (put the
+  // project's secret/service key value there), otherwise the platform-injected
+  // service role key. The public publishable/anon key never matches either,
+  // so visitors cannot trigger Arccos traffic.
+  const syncKey = Deno.env.get('SYNC_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const dbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SYNC_KEY') || '';
   const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-  if (!svcKey || bearer !== svcKey) {
-    return json(401, { error: 'service role key required' });
+  if (!syncKey || bearer !== syncKey) {
+    return json(401, { error: 'sync key required' });
   }
 
   const email = Deno.env.get('ARCCOS_EMAIL');
@@ -47,7 +53,7 @@ Deno.serve(async (req) => {
     return json(500, { error: 'ARCCOS_EMAIL / ARCCOS_PASSWORD secrets are not set' });
   }
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, svcKey);
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, dbKey);
   const body = await req.json().catch(() => ({}));
   const fullRefetch = body?.full === true;
   const t0 = Date.now();

@@ -67,7 +67,7 @@ Needs the Supabase CLI (`npm i -g supabase`):
 ```
 supabase login
 supabase link --project-ref <PROJECT_REF>
-supabase secrets set ARCCOS_EMAIL=<arccos login> ARCCOS_PASSWORD=<arccos password>
+supabase secrets set ARCCOS_EMAIL=<arccos login> ARCCOS_PASSWORD=<arccos password> SYNC_KEY=<secret key>
 supabase functions deploy arccos-sync
 ```
 
@@ -75,7 +75,7 @@ Then Dashboard -> Database -> Extensions: enable `pg_cron` and `pg_net`, and run
 the Vault + `cron.schedule` template at the bottom of `supabase/schema.sql`
 (fill in `<PROJECT_REF>` and the service key). Daily 09:00 UTC by default.
 
-Smoke test (the function rejects anything but the service role key):
+Smoke test (the function rejects anything but the sync key):
 
 ```
 curl -X POST https://<PROJECT_REF>.supabase.co/functions/v1/arccos-sync \
@@ -103,5 +103,5 @@ refetches all geometry if the cache is ever suspect. Optional secret
 - GPS geometry lives server-side only (`roundbook_raw_rounds`: RLS, no
   policies, client grants revoked). The dashboard payload has no coordinates.
 - Arccos credentials exist only as Supabase secrets.
-- The sync endpoint requires the service role key, so the public anon key
+- The sync endpoint requires the sync key, so the public anon/publishable key
   cannot trigger Arccos traffic.
