@@ -56,8 +56,10 @@ sync fetches nothing it already has.
    - `VITE_SUPABASE_ANON_KEY` = the anon/public key
 4. Deploy. Log in at the Vercel URL with the account from step 1.3.
 
-The page shell is public but personal data is not: reads go through RLS that
-only your login satisfies. For local dev: copy `web/.env.example` to
+By default the data is owner-only: reads go through RLS that only your login
+satisfies. To let anyone with the link VIEW the dashboard, run the optional
+public-read policy in supabase/schema.sql (derived stats only, no GPS; the
+sync stays owner-only either way). The same file has the revert. For local dev: copy `web/.env.example` to
 `web/.env.local`, fill it in, `npm run dev`.
 
 ### 4. The self-updating part (~10 min)

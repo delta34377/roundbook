@@ -34,6 +34,25 @@ create policy "roundbook_data owner read"
   for select
   using ((auth.jwt() ->> 'email') = 'markgreenfield1@gmail.com');
 
+-- ----------------------------------------------------------------------------
+-- OPTIONAL: public viewing. The owner-read policy above is the default.
+-- To let anyone with the link view the dashboard (derived golf stats only,
+-- no GPS - the raw geometry table below stays locked either way), swap the
+-- select policy:
+--
+--   drop policy if exists "roundbook_data owner read" on public.roundbook_data;
+--   drop policy if exists "roundbook_data public read" on public.roundbook_data;
+--   create policy "roundbook_data public read"
+--     on public.roundbook_data for select using (true);
+--
+-- To make it private again:
+--
+--   drop policy if exists "roundbook_data public read" on public.roundbook_data;
+--   create policy "roundbook_data owner read"
+--     on public.roundbook_data for select
+--     using ((auth.jwt() ->> 'email') = 'markgreenfield1@gmail.com');
+-- ----------------------------------------------------------------------------
+
 create table if not exists public.roundbook_raw_rounds (
   round_id    bigint primary key,
   start_time  text,

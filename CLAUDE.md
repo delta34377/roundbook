@@ -109,7 +109,7 @@ Direction math for agr (verified): ENU meters relative to pin E=(lon-lonp)*cos(l
 
 ## Privacy
 
-This repo is PRIVATE and stays that way. arccos-data-full.json contains GPS coordinates of every shot and is gitignored anyway (belt and braces); regenerate it locally when needed. Server-side, raw geometry lives only in roundbook_raw_rounds (RLS, zero policies, service role only); roundbook_data is readable only by the owner's login and contains no coordinates. Never put Arccos credentials in code, the repo, or client-side anything; the exporter prompts at runtime and the sync function reads Supabase secrets.
+This repo is PRIVATE and stays that way. arccos-data-full.json contains GPS coordinates of every shot and is gitignored anyway (belt and braces); regenerate it locally when needed. Server-side, raw geometry lives only in roundbook_raw_rounds (RLS, zero policies, service role only); roundbook_data contains no coordinates; its read policy is either owner-only or, by the owner's choice, public-view (schema.sql has both + the revert). Sync stays owner-only regardless. Never put Arccos credentials in code, the repo, or client-side anything; the exporter prompts at runtime and the sync function reads Supabase secrets.
 
 ## Roadmap
 
