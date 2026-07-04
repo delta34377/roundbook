@@ -252,3 +252,16 @@
   .rb-scope .tab{white-space:nowrap;flex:0 0 auto;padding:12px 13px}
   .rb-scope .rangewrap input[type=range]{width:110px}
 }
+/* App-like navigation: the tab bar pins to the top while you scroll, the
+   mobile strip hints that it scrolls, and inner scroll areas get dark
+   scrollbars. Mirrored in build_dash.py's CSS. */
+.rb-scope .tabs{position:sticky;top:0;z-index:40;background:var(--bg)}
+.rb-scope .scorecard{scrollbar-width:thin;scrollbar-color:#35493b transparent}
+.rb-scope .scorecard::-webkit-scrollbar{height:8px}
+.rb-scope .scorecard::-webkit-scrollbar-thumb{background:#35493b;border-radius:4px}
+.rb-scope .scorecard::-webkit-scrollbar-track{background:transparent}
+@media(max-width:700px){
+  .rb-scope .tabs{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 30px),transparent)}
+}
+/* Soft mount fade for the shell (web app only). */
+.rb-scope{animation:rb-fade .25s ease}

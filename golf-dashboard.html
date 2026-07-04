@@ -221,6 +221,17 @@ table.sc td:first-child,table.sc th:first-child{text-align:left}
   .tab{white-space:nowrap;flex:0 0 auto;padding:12px 13px}
   .rangewrap input[type=range]{width:110px}
 }
+
+/* App-like navigation: sticky tab bar, mobile scroll hint, dark scrollbars on
+   the scorecard. Mirrored in the web app's roundbook.css - keep in step. */
+.tabs{position:sticky;top:0;z-index:40;background:var(--bg)}
+.scorecard{scrollbar-width:thin;scrollbar-color:#35493b transparent}
+.scorecard::-webkit-scrollbar{height:8px}
+.scorecard::-webkit-scrollbar-thumb{background:#35493b;border-radius:4px}
+.scorecard::-webkit-scrollbar-track{background:transparent}
+@media(max-width:700px){
+  .tabs{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 30px),transparent)}
+}
 </style></head><body>
 <div class="wrap">
   <header class="mast">
