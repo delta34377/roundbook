@@ -30,13 +30,24 @@ import { ArccosError, fetchHandicap, fetchRoundDetail, fetchRoundsList, fetchSma
 const DETAIL_DELAY_MS = 300;
 const RECENT_REFRESH = 2;
 
+// Browser calls (the site's Sync button) require CORS: answer the preflight
+// and stamp every response. Security lives in the bearer check, not origin.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS },
   });
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS });
+  }
   // Two ways in:
   //   1) the sync key (the cron schedule / manual curl): the SYNC_KEY secret
   //      if set, otherwise the platform-injected service role key
