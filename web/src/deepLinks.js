@@ -24,11 +24,10 @@ export function wireDeepLinks(host) {
     const p = new URLSearchParams(location.hash.slice(1))
     const course = p.get('course')
     const tab = p.get('tab')
-    if (course) {
-      const b = [...host.querySelectorAll('#coursebtns [data-course]')].find(
-        (x) => x.dataset.course === course
-      )
-      if (b && !b.classList.contains('on')) b.click()
+    const sel = host.querySelector('#courseSel')
+    if (course && sel && sel.value !== course && [...sel.options].some((o) => o.value === course)) {
+      sel.value = course
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
     }
     const t = tab && host.querySelector(`.tab[data-tab="${tab}"]`)
     if (t && !t.classList.contains('on')) t.click()
@@ -37,7 +36,7 @@ export function wireDeepLinks(host) {
 
   const record = () => {
     const t = host.querySelector('.tab.on')?.dataset.tab
-    const c = host.querySelector('#coursebtns .btn.on')?.dataset.course
+    const c = host.querySelector('#courseSel')?.value
     const p = new URLSearchParams()
     if (t && t !== 'overview') p.set('tab', t)
     if (c && c !== 'All') p.set('course', c)
@@ -45,9 +44,12 @@ export function wireDeepLinks(host) {
     history.replaceState(null, '', h ? '#' + h : location.pathname + location.search)
   }
 
+  host.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'courseSel') setTimeout(record, 0)
+  })
   host.addEventListener('click', (e) => {
     const hitTab = e.target.closest('.tab')
-    if (hitTab || e.target.closest('[data-course], #resetF')) setTimeout(record, 0)
+    if (hitTab || e.target.closest('#resetF')) setTimeout(record, 0)
     if (hitTab) {
       if (window.scrollY > tabsTop) window.scrollTo({ top: tabsTop })
       revealActiveTab()

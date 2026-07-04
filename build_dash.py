@@ -236,6 +236,12 @@ table.sc td:first-child,table.sc th:first-child{text-align:left}
 @media(max-width:700px){
   .tabs{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 30px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 16px,#000 calc(100% - 30px),transparent)}
 }
+
+/* Course dropdown (options generated from the data at build time). Mirrored
+   in the web app's roundbook.css - keep in step. */
+.csel{background:var(--panel2);border:1px solid var(--line2);color:var(--ink);font:inherit;font-size:12.5px;padding:7px 30px 7px 12px;border-radius:8px;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2393a99c' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+.csel:hover,.csel:focus{border-color:var(--fairway);outline:none}
+.csel option{background:var(--panel2);color:var(--ink)}
 """
 
 JS = r"""
@@ -942,10 +948,8 @@ window.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
     document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
     t.classList.add('on');document.getElementById('p-'+t.dataset.tab).classList.add('on');renderActive();});
-  // course buttons
-  document.querySelectorAll('[data-course]').forEach(b=>b.onclick=()=>{
-    document.querySelectorAll('[data-course]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
-    state.course=b.dataset.course;updateSummary();renderActive();});
+  // course dropdown
+  document.getElementById('courseSel').onchange=()=>{state.course=document.getElementById('courseSel').value;updateSummary();renderActive();};
   // date range
   const f=document.getElementById('fromR'),tt=document.getElementById('toR');
   f.max=tt.max=sortedDates.length-1;f.value=0;tt.value=sortedDates.length-1;
@@ -955,7 +959,7 @@ window.addEventListener('DOMContentLoaded',()=>{
     updateSummary();renderActive();}
   f.oninput=dr;tt.oninput=dr;
   document.getElementById('resetF').onclick=()=>{state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
-    f.value=0;tt.value=sortedDates.length-1;document.querySelectorAll('[data-course]').forEach(x=>x.classList.toggle('on',x.dataset.course==='All'));dr();};
+    f.value=0;tt.value=sortedDates.length-1;document.getElementById('courseSel').value='All';dr();};
   // tee slider
   const dm=document.getElementById('drvMin');dm.oninput=()=>{drvMin=+dm.value;updateDrvSlider();};
   // gap threshold
@@ -987,12 +991,7 @@ BODY = """
 
   <div class="filters">
     <div class="fgroup"><span class="flab">Course</span>
-      <div class="btns" id="coursebtns">
-        <button class="btn on" data-course="All">All</button>
-        <button class="btn" data-course="Birchwood CC">Birchwood</button>
-        <button class="btn" data-course="Longshore Golf Club">Longshore</button>
-        <button class="btn" data-course="The Connecticut GC">Connecticut</button>
-      </div>
+      <div class="btns" id="coursebtns">__COURSE_SELECT__</div>
     </div>
     <div class="fgroup"><span class="flab">From</span>
       <div class="rangewrap"><input type="range" id="fromR" min="0" step="1"><span class="rv" id="fromV"></span></div>
@@ -1226,6 +1225,16 @@ BODY = """
   <p class="foot"><b>Computed live from your Arccos export</b> <span id="footMeta"></span>. Lie-based stats (sand saves, rough/sand splits, per-shot strokes gained) aren't shown — that layer isn't accessible to export. Scrambling here is score-based (par or better after a missed green). Category handicaps are account-wide; everything else respects the filters.</p>
 </div>
 """
+
+import html as _html, re as _re
+def _short_course(name):
+    s = _re.sub(r"^The\s+", "", str(name), flags=_re.I)
+    s = _re.sub(r"\s+(Country Club|Golf Club|Golf Course|Golf Links|Club|Course|Links|CC|GC)$", "", s, flags=_re.I)
+    return s.strip() or name
+_opts = '<option value="All">All courses</option>' + "".join(
+    f'<option value="{_html.escape(c, quote=True)}">{_html.escape(_short_course(c))}</option>'
+    for c in data["meta"]["courses"])
+BODY = BODY.replace("__COURSE_SELECT__", f'<select class="csel" id="courseSel">{_opts}</select>')
 
 html = ("<!doctype html><html lang='en'><head><meta charset='utf-8'>"
 "<meta name='viewport' content='width=device-width, initial-scale=1'>"

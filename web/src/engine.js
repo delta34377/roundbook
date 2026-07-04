@@ -8,8 +8,8 @@
 //   - data arrives via initRoundBook(root, data) instead of window.__DATA__
 //   - DOM lookups are scoped to the mounted root instead of document
 //   - Chart.js comes from npm instead of the CDN global
-//   - course filter buttons generate from data.meta.courses (the static HTML
-//     hardcoded the three current courses; a synced dashboard can grow new ones)
+//   - the course filter is a dropdown whose options generate from
+//     data.meta.courses, so new courses appear on their own
 //   - the two inline onclick strings became addEventListener wiring (module
 //     scope has no window globals)
 //   - initRoundBook returns destroyRoundBook, which tears down the charts
@@ -677,8 +677,8 @@ function shortCourse(name){
   return s.trim()||name;
 }
 const escAttr=(s)=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function buildCourseButtons(){
-  $('coursebtns').innerHTML=['All',...D.meta.courses].map(c=>`<button class="btn ${c==='All'?'on':''}" data-course="${escAttr(c)}">${c==='All'?'All':escAttr(shortCourse(c))}</button>`).join('\n');
+function buildCourseSelect(){
+  $('coursebtns').innerHTML=`<select class="csel" id="courseSel">${['All',...D.meta.courses].map(c=>`<option value="${escAttr(c)}">${c==='All'?'All courses':escAttr(shortCourse(c))}</option>`).join('')}</select>`;
 }
 
 export function initRoundBook(rootEl, data){
@@ -687,16 +687,14 @@ export function initRoundBook(rootEl, data){
   sortedDates=[...new Set(D.rounds.map(r=>r.date))].sort();
   state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
   frT=50; drvMin=150; selClub=0; gapThresh=18; openRound=null; benchHcp=null;
-  buildCourseButtons();
+  buildCourseSelect();
   // tabs
   root.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
     root.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
     root.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
     t.classList.add('on');$('p-'+t.dataset.tab).classList.add('on');renderActive();});
-  // course buttons
-  root.querySelectorAll('[data-course]').forEach(b=>b.onclick=()=>{
-    root.querySelectorAll('[data-course]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
-    state.course=b.dataset.course;updateSummary();renderActive();});
+  // course dropdown
+  $('courseSel').onchange=()=>{state.course=$('courseSel').value;updateSummary();renderActive();};
   // date range
   const f=$('fromR'),tt=$('toR');
   f.max=tt.max=sortedDates.length-1;f.value=0;tt.value=sortedDates.length-1;
@@ -706,7 +704,7 @@ export function initRoundBook(rootEl, data){
     updateSummary();renderActive();}
   f.oninput=dr;tt.oninput=dr;
   $('resetF').onclick=()=>{state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
-    f.value=0;tt.value=sortedDates.length-1;root.querySelectorAll('[data-course]').forEach(x=>x.classList.toggle('on',x.dataset.course==='All'));dr();};
+    f.value=0;tt.value=sortedDates.length-1;$('courseSel').value='All';dr();};
   // tee slider
   const dm=$('drvMin');dm.oninput=()=>{drvMin=+dm.value;updateDrvSlider();};
   // gap threshold
