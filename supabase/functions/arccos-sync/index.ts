@@ -8,10 +8,11 @@
 // CLAUDE.md rule 6: the dashboard uses Mark's real index, never
 // Arccos's internal userHcp).
 //
-// Auth: callable only with the sync key as the bearer (the pg_cron schedule
-// in supabase/schema.sql sends it from Vault; set the same value as the
-// SYNC_KEY function secret). Public keys are rejected so visitors cannot
-// trigger Arccos traffic.
+// Auth: callable with the sync key as the bearer (the pg_cron schedule in
+// supabase/schema.sql sends it from Vault; set the same value as the SYNC_KEY
+// function secret) OR with the owner's logged-in session token (the site's
+// Sync button; email checked against OWNER_EMAIL, default the owner's).
+// Public keys are rejected so visitors cannot trigger Arccos traffic.
 //
 // Behavior per run:
 //   - fetch the full rounds list (newest first)
@@ -36,15 +37,28 @@ const json = (status: number, body: unknown) =>
   });
 
 Deno.serve(async (req) => {
-  // Callers must present the sync key: the SYNC_KEY secret if set (put the
-  // project's secret/service key value there), otherwise the platform-injected
-  // service role key. The public publishable/anon key never matches either,
-  // so visitors cannot trigger Arccos traffic.
+  // Two ways in:
+  //   1) the sync key (the cron schedule / manual curl): the SYNC_KEY secret
+  //      if set, otherwise the platform-injected service role key
+  //   2) the owner's logged-in session token (the site's Sync button): a
+  //      valid user JWT whose email matches OWNER_EMAIL
+  // Public publishable/anon keys match neither, and other users' tokens fail
+  // the email check, so visitors cannot trigger Arccos traffic.
   const syncKey = Deno.env.get('SYNC_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const dbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SYNC_KEY') || '';
+  const ownerEmail = Deno.env.get('OWNER_EMAIL') || 'markgreenfield1@gmail.com'; // same address as the RLS policy
   const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-  if (!syncKey || bearer !== syncKey) {
-    return json(401, { error: 'sync key required' });
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, dbKey);
+  let authorized = Boolean(syncKey) && bearer === syncKey;
+  if (!authorized && bearer) {
+    const { data: userData, error: userErr } = await supabase.auth.getUser(bearer);
+    authorized =
+      !userErr &&
+      typeof userData?.user?.email === 'string' &&
+      userData.user.email.toLowerCase() === ownerEmail.toLowerCase();
+  }
+  if (!authorized) {
+    return json(401, { error: 'sync key or owner login required' });
   }
 
   const email = Deno.env.get('ARCCOS_EMAIL');
@@ -53,7 +67,6 @@ Deno.serve(async (req) => {
     return json(500, { error: 'ARCCOS_EMAIL / ARCCOS_PASSWORD secrets are not set' });
   }
 
-  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, dbKey);
   const body = await req.json().catch(() => ({}));
   const fullRefetch = body?.full === true;
   const t0 = Date.now();

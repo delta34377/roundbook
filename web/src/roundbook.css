@@ -240,3 +240,6 @@
 .rb-login input{background:#1b2e24;border:1px solid #35493b;border-radius:8px;padding:9px 12px;color:#eef3ec;font:inherit;font-size:13.5px}
 .rb-login input:focus{outline:none;border-color:#4ea87a}
 .rb-err{color:#f08a82;font-size:12.5px;margin:0}
+.rb-sync{background:#1b2e24;border:1px solid #4ea87a;color:#7fd3a4;font:inherit;font-size:12.5px;padding:6px 12px;border-radius:8px;cursor:pointer;transition:.12s}
+.rb-sync:hover{background:#4ea87a;color:#08130d}
+.rb-sync:disabled{opacity:.6;cursor:default}

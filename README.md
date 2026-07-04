@@ -87,6 +87,11 @@ Expect JSON with rounds/holes counts and the through-date. `{"full": true}`
 refetches all geometry if the cache is ever suspect. Optional secret
 `ROUNDBOOK_HCP` overrides the handicap used by the dashboard (default 13.7).
 
+The site's **Sync button** (top right after login) triggers the same function
+with your login session token; the function accepts it only when the token's
+email matches `OWNER_EMAIL` (secret, defaults to the owner's address), so no
+secret key ever reaches the browser and nobody else can trigger it.
+
 ## Verification
 
 - `node --experimental-strip-types web/scripts/verify-derive-parity.mjs` -

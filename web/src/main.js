@@ -134,14 +134,37 @@ async function loadDashboard(supabase) {
     '<div class="rb-page"><div class="rb-topbar">' +
       '<span class="rb-brand">The Round Book</span>' +
       '<span class="rb-topbar-right"><span class="rb-updated" id="rb-updated"></span>' +
+      '<button class="rb-sync" id="rb-sync" title="Pull the latest rounds from Arccos now">Sync</button>' +
       '<button class="rb-back" id="rb-signout">Sign out</button></span></div>' +
       '<div id="rb-host" class="rb-scope"></div></div>'
   )
   document.getElementById('rb-updated').textContent = updated
   wireSignOut(supabase)
+  wireSync(supabase)
   const host = document.getElementById('rb-host')
   host.innerHTML = RB_BODY_HTML
   destroyEngine = initRoundBook(host, data.data)
+}
+
+// The Sync button calls the arccos-sync function with the logged-in session
+// token; the function verifies server-side that the token belongs to the
+// owner before touching Arccos, so no secret ever reaches the browser.
+function wireSync(supabase) {
+  const btn = document.getElementById('rb-sync')
+  if (!btn) return
+  btn.addEventListener('click', async () => {
+    btn.disabled = true
+    btn.textContent = 'Syncing…'
+    const { data, error } = await supabase.functions.invoke('arccos-sync', { body: {} })
+    if (error || data?.error) {
+      console.error('sync failed:', error || data?.error)
+      btn.disabled = false
+      btn.textContent = 'Sync failed - retry'
+      btn.title = String(data?.error || error?.message || 'Unknown error')
+      return
+    }
+    loadDashboard(supabase) // re-render with whatever the sync just wrote
+  })
 }
 
 async function start() {
