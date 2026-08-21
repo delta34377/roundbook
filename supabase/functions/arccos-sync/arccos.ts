@@ -97,6 +97,13 @@ export function fetchRoundDetail(uid: string, rid: string | number, token: strin
   return call('round-detail', 'GET', `${API}/users/${uid}/rounds/${rid}`, token);
 }
 
+// Course detail: the REAL scorecard (hole pars/yardages). Same endpoint as
+// arccos_export.py's courses_detail section; version pinned to what the
+// player's rounds actually used.
+export function fetchCourseDetail(cid: string | number, version: string | number, token: string): Promise<any> {
+  return call('course-detail', 'GET', `${API}/courses/${cid}?courseVersion=${version}`, token);
+}
+
 export function fetchSmartDistances(uid: string, token: string): Promise<any> {
   return call('smart-distances', 'GET', `${API}/v4/clubs/user/${uid}/smart-distances`, token);
 }

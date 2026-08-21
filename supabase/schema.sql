@@ -64,6 +64,21 @@ alter table public.roundbook_raw_rounds enable row level security;
 -- No policies on purpose: GPS shot traces never reach a client session.
 revoke all on table public.roundbook_raw_rounds from anon, authenticated;
 
+-- Course detail from Arccos (/courses/{id}) cached by arccos-sync. Verified
+-- Aug 2026: it holds NO per-hole pars (total mensPar/womensPar, tee
+-- ratings, empty snapshotData, null pinLocations), so par stays GPS-inferred;
+-- cached anyway for the totals (par-sum corroboration) and in case a future
+-- courseVersion adds the scorecard. Server-side only, like the raw rounds.
+create table if not exists public.roundbook_courses (
+  course_id       text primary key,
+  course_version  text,
+  payload         jsonb not null,
+  fetched_at      timestamptz not null default now()
+);
+
+alter table public.roundbook_courses enable row level security;
+revoke all on table public.roundbook_courses from anon, authenticated;
+
 -- ============================================================================
 -- Scheduling the sync (run once, after deploying the arccos-sync function and
 -- setting its secrets — full steps in README.md):

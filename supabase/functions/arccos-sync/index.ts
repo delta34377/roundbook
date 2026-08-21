@@ -25,7 +25,7 @@
 //     existing row is left untouched
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { deriveDashData } from './derive.ts';
-import { ArccosError, fetchHandicap, fetchRoundDetail, fetchRoundsList, fetchSmartDistances, login, tokenFor } from './arccos.ts';
+import { ArccosError, fetchCourseDetail, fetchHandicap, fetchRoundDetail, fetchRoundsList, fetchSmartDistances, login, tokenFor } from './arccos.ts';
 
 const DETAIL_DELAY_MS = 300;
 const RECENT_REFRESH = 2;
@@ -135,6 +135,48 @@ Deno.serve(async (req) => {
       await new Promise((r) => setTimeout(r, DETAIL_DELAY_MS));
     }
 
+    // --- course scorecards: cache real pars for any course not yet fetched ---
+    // (or whose courseVersion moved; {"full":true} refetches these too)
+    const wantCourses = new Map<string, string>(); // courseId -> latest courseVersion seen
+    for (const rd of listed) {
+      const cid = rd.courseId != null ? String(rd.courseId) : '';
+      if (!cid) continue;
+      const v = rd.courseVersion != null ? String(rd.courseVersion) : '1';
+      const prev = wantCourses.get(cid);
+      if (prev == null || Number(v) > Number(prev)) wantCourses.set(cid, v);
+    }
+    const haveCourses = new Map<string, string>();
+    {
+      const { data, error } = await supabase.from('roundbook_courses').select('course_id, course_version');
+      if (error) throw new Error(`roundbook_courses read failed: ${error.message}`);
+      for (const row of data ?? []) haveCourses.set(String(row.course_id), String(row.course_version ?? ''));
+    }
+    let coursesFetched = 0;
+    for (const [cid, ver] of wantCourses) {
+      if (!fullRefetch && haveCourses.get(cid) === ver) continue;
+      try {
+        const detail = await fetchCourseDetail(cid, ver, token);
+        const { error } = await supabase.from('roundbook_courses').upsert({
+          course_id: cid,
+          course_version: ver,
+          payload: detail,
+          fetched_at: new Date().toISOString(),
+        });
+        if (error) throw new Error(`course upsert failed: ${error.message}`);
+        coursesFetched += 1;
+      } catch (e) {
+        if (e instanceof ArccosError) skipped.push(`course ${cid}: ${e.message}`);
+        else throw e;
+      }
+      await new Promise((r) => setTimeout(r, DETAIL_DELAY_MS));
+    }
+    const coursesDetail: Record<string, any> = {};
+    {
+      const { data, error } = await supabase.from('roundbook_courses').select('course_id, payload');
+      if (error) throw new Error(`roundbook_courses read failed: ${error.message}`);
+      for (const row of data ?? []) coursesDetail[String(row.course_id)] = row.payload;
+    }
+
     // --- assemble the raw export shape in the listed (newest-first) order ---
     const byId = new Map<string, any>();
     for (let at = 0; at < rids.length; at += 100) {
@@ -167,6 +209,7 @@ Deno.serve(async (req) => {
       rounds_detail: roundsDetail,
       smart_distances: smartDistances,
       handicap,
+      courses_detail: coursesDetail,
     });
     if (!payload.meta.nRounds) {
       return json(500, { error: 'derivation produced zero rounds; refusing to overwrite' });
@@ -195,6 +238,7 @@ Deno.serve(async (req) => {
       through: payload.meta.dateMax,
       listed: rids.length,
       geometryFetched: fetched,
+      coursesFetched,
       skipped,
       hcp: payload.hcp,
       ms: Date.now() - t0,

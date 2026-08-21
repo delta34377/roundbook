@@ -106,6 +106,13 @@ function fetchRoundDetail(uid: string, rid: string | number, token: string): Pro
   return call('round-detail', 'GET', `${API}/users/${uid}/rounds/${rid}`, token);
 }
 
+// Course detail: the REAL scorecard (hole pars/yardages). Same endpoint as
+// arccos_export.py's courses_detail section; version pinned to what the
+// player's rounds actually used.
+function fetchCourseDetail(cid: string | number, version: string | number, token: string): Promise<any> {
+  return call('course-detail', 'GET', `${API}/courses/${cid}?courseVersion=${version}`, token);
+}
+
 function fetchSmartDistances(uid: string, token: string): Promise<any> {
   return call('smart-distances', 'GET', `${API}/v4/clubs/user/${uid}/smart-distances`, token);
 }
@@ -124,7 +131,8 @@ function fetchHandicap(uid: string, token: string): Promise<any> {
 // the parity check; if the two ever disagree, prep_data.py wins.
 //
 // Field reference (hole record) — same as prep_data.py:
-//   h     hole number            par   GPS-inferred par, pooled per course+hole (median)
+//   h     hole number            par   GPS-inferred par, pooled per course+hole (median;
+//                                h and h+9 share a pool when their pins share a green)
 //   score noOfShots              putts Arccos putt count (Air caveat: may include fringe)
 //   gir   1/0/null               fw    1/0/null (null on par 3)   miss 'L'/'R'/''
 //   drv   driver distance yds    tee   tee club name              pen  penalty strokes
@@ -226,7 +234,7 @@ function enu(lat: number, lon: number, latp: number, lonp: number): [number, num
 // tee-to-pin distance (any play flagged approachShotId===1 marks a par 3).
 // Mirrors prep_data.py's build_par_pool/par_of exactly; the median of the
 // same doubles is bit-identical between statistics.median and median() above.
-type ParObs = { p3: boolean; ds: number[] };
+type ParObs = { p3: boolean; ds: number[]; pins: Array<[number, number]> };
 const parKey = (crs: string, holeId: any) => `${crs}\u0000${holeId ?? null}`;
 
 function buildParPool(roundsDetail: any[]): Map<string, ParObs> {
@@ -239,11 +247,37 @@ function buildParPool(roundsDetail: any[]): Map<string, ParObs> {
       if (!s.length) continue;
       const k = parKey(crs, h.holeId);
       let o = pool.get(k);
-      if (!o) pool.set(k, (o = { p3: false, ds: [] }));
+      if (!o) pool.set(k, (o = { p3: false, ds: [], pins: [] }));
       if (h.approachShotId === 1) o.p3 = true;
       const L = yd(s[0]?.startLat, s[0]?.startLong, h.pinLat, h.pinLong);
       if (L != null) o.ds.push(L);
+      if (h.pinLat != null && h.pinLong != null) o.pins.push([h.pinLat, h.pinLong]);
     }
+  }
+  // A 9-hole course played twice logs the same physical hole as h and h+9
+  // (Birchwood: the ~471yd 2nd is also the 11th; its GPS reads straddle the
+  // 470 par-5 line, and the 11th alone drew the short ones). Same green ->
+  // same hole -> ONE pool: merge when the two holes' typical pins sit within
+  // 50yd (pins move around a green; distinct greens sit much further apart).
+  const pinOf = (o: ParObs): [number, number] | null => {
+    if (!o.pins.length) return null;
+    return [median(o.pins.map((p) => p[0])), median(o.pins.map((p) => p[1]))];
+  };
+  for (const k of [...pool.keys()]) {
+    const at = k.indexOf('\u0000');
+    const crs = k.slice(0, at);
+    const h = Number(k.slice(at + 1));
+    if (!Number.isInteger(h) || h < 1 || h > 9) continue;
+    const a = pool.get(k)!;
+    const b = pool.get(parKey(crs, h + 9));
+    if (!b) continue;
+    const pa = pinOf(a), pb = pinOf(b);
+    if (!pa || !pb) continue;
+    const d = yd(pa[0], pa[1], pb[0], pb[1]);
+    if (d == null || d > 50) continue;
+    const merged: ParObs = { p3: a.p3 || b.p3, ds: a.ds.concat(b.ds), pins: a.pins.concat(b.pins) };
+    pool.set(k, merged);
+    pool.set(parKey(crs, h + 9), merged);
   }
   return pool;
 }
@@ -575,6 +609,48 @@ Deno.serve(async (req) => {
       await new Promise((r) => setTimeout(r, DETAIL_DELAY_MS));
     }
 
+    // --- course scorecards: cache real pars for any course not yet fetched ---
+    // (or whose courseVersion moved; {"full":true} refetches these too)
+    const wantCourses = new Map<string, string>(); // courseId -> latest courseVersion seen
+    for (const rd of listed) {
+      const cid = rd.courseId != null ? String(rd.courseId) : '';
+      if (!cid) continue;
+      const v = rd.courseVersion != null ? String(rd.courseVersion) : '1';
+      const prev = wantCourses.get(cid);
+      if (prev == null || Number(v) > Number(prev)) wantCourses.set(cid, v);
+    }
+    const haveCourses = new Map<string, string>();
+    {
+      const { data, error } = await supabase.from('roundbook_courses').select('course_id, course_version');
+      if (error) throw new Error(`roundbook_courses read failed: ${error.message}`);
+      for (const row of data ?? []) haveCourses.set(String(row.course_id), String(row.course_version ?? ''));
+    }
+    let coursesFetched = 0;
+    for (const [cid, ver] of wantCourses) {
+      if (!fullRefetch && haveCourses.get(cid) === ver) continue;
+      try {
+        const detail = await fetchCourseDetail(cid, ver, token);
+        const { error } = await supabase.from('roundbook_courses').upsert({
+          course_id: cid,
+          course_version: ver,
+          payload: detail,
+          fetched_at: new Date().toISOString(),
+        });
+        if (error) throw new Error(`course upsert failed: ${error.message}`);
+        coursesFetched += 1;
+      } catch (e) {
+        if (e instanceof ArccosError) skipped.push(`course ${cid}: ${e.message}`);
+        else throw e;
+      }
+      await new Promise((r) => setTimeout(r, DETAIL_DELAY_MS));
+    }
+    const coursesDetail: Record<string, any> = {};
+    {
+      const { data, error } = await supabase.from('roundbook_courses').select('course_id, payload');
+      if (error) throw new Error(`roundbook_courses read failed: ${error.message}`);
+      for (const row of data ?? []) coursesDetail[String(row.course_id)] = row.payload;
+    }
+
     // --- assemble the raw export shape in the listed (newest-first) order ---
     const byId = new Map<string, any>();
     for (let at = 0; at < rids.length; at += 100) {
@@ -607,6 +683,7 @@ Deno.serve(async (req) => {
       rounds_detail: roundsDetail,
       smart_distances: smartDistances,
       handicap,
+      courses_detail: coursesDetail,
     });
     if (!payload.meta.nRounds) {
       return json(500, { error: 'derivation produced zero rounds; refusing to overwrite' });
@@ -635,6 +712,7 @@ Deno.serve(async (req) => {
       through: payload.meta.dateMax,
       listed: rids.length,
       geometryFetched: fetched,
+      coursesFetched,
       skipped,
       hcp: payload.hcp,
       ms: Date.now() - t0,

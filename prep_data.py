@@ -10,7 +10,8 @@ Usage:
   python3 prep_data.py raw.json out.json        # explicit paths
 
 Field reference (hole record):
-  h     hole number            par   GPS-inferred par, pooled per course+hole (median)
+  h     hole number            par   GPS-inferred par, pooled per course+hole (median;
+                               h and h+9 share a pool when their pins share a green)
   score noOfShots              putts Arccos putt count (Air caveat: may include fringe)
   gir   1/0/None               fw    1/0/None (None on par 3)   miss 'L'/'R'/''
   drv   driver distance yds    tee   tee club name              pen  penalty strokes
@@ -56,7 +57,7 @@ def enu(lat, lon, latp, lonp):
 # the hole a par 3 (same precedence as before). The exporter's courses_detail
 # section has the real scorecard pars; see the probe at the bottom of this file.
 def build_par_pool(rounds_detail):
-    pool = defaultdict(lambda: {"p3": False, "ds": []})
+    pool = defaultdict(lambda: {"p3": False, "ds": [], "pins": []})
     for rd in rounds_detail:
         crs = rd.get("courseName", "?")
         for h in rd["holes"]:
@@ -67,6 +68,28 @@ def build_par_pool(rounds_detail):
             if h.get("approachShotId") == 1: o["p3"] = True
             L = yd(s[0].get("startLat"), s[0].get("startLong"), h.get("pinLat"), h.get("pinLong"))
             if L is not None: o["ds"].append(L)
+            if h.get("pinLat") is not None and h.get("pinLong") is not None:
+                o["pins"].append((h["pinLat"], h["pinLong"]))
+    # A 9-hole course played twice logs the same physical hole as h and h+9
+    # (Birchwood: the ~471yd 2nd is also the 11th; its GPS reads straddle the
+    # 470 par-5 line, and the 11th alone drew the short ones). Same green ->
+    # same hole -> ONE pool: merge when the two holes' typical pins sit within
+    # 50yd (pins move around a green; distinct greens sit much further apart).
+    def pin_of(o):
+        if not o["pins"]: return None
+        return (median([p[0] for p in o["pins"]]),
+                median([p[1] for p in o["pins"]]))
+    for crs, h in sorted(k for k in pool if isinstance(k[1], int) and 1 <= k[1] <= 9):
+        a, b = pool.get((crs, h)), pool.get((crs, h + 9))
+        if a is None or b is None: continue
+        pa, pb = pin_of(a), pin_of(b)
+        if pa is None or pb is None: continue
+        d = yd(pa[0], pa[1], pb[0], pb[1])
+        if d is None or d > 50: continue
+        merged = {"p3": a["p3"] or b["p3"], "ds": a["ds"] + b["ds"],
+                  "pins": a["pins"] + b["pins"]}
+        pool[(crs, h)] = merged
+        pool[(crs, h + 9)] = merged
     return pool
 
 par_pool = build_par_pool(d["rounds_detail"])
@@ -214,12 +237,14 @@ print(f"wrote {OUT}: {len(rounds)} rounds, {payload['meta']['nHoles']} holes, "
       f"{payload['meta']['dateMin']} to {payload['meta']['dateMax']}")
 
 # --- scorecard probe (diagnostic only; the payload above is untouched) -------
-# arccos_export.py pulls /courses/{id} into courses_detail ("real hole
-# pars/yardages") but its exact shape has not been seen against a live export
-# yet, so pars are still inferred above. This probe hunts for a per-hole par
-# list in whatever shape courses_detail has, reports any disagreement with the
-# inferred pars, and writes course_pars.json (pars only, no coordinates, safe
-# to commit) so the real scorecard can be wired in as the source of truth.
+# Verified Aug 2026 against the live API: /courses/{id} has NO per-hole pars
+# (only total mensPar/womensPar, tee ratings, empty snapshotData, null
+# pinLocations), so GPS inference above IS the source of truth. This probe
+# stays in case a future courseVersion adds a per-hole par list: it hunts for
+# one in whatever shape courses_detail has, reports disagreements with the
+# inferred pars, and writes course_pars.json (pars only, no coordinates).
+# When no list exists it prints the course totals, which corroborate the
+# inference (Birchwood mensPar 72 = two par-36 nines -> the 11th is a par 5).
 try:
     def find_hole_pars(js):
         """DFS for the first list of >=6 dicts carrying a par-like key."""
@@ -255,8 +280,10 @@ try:
             if pars:
                 report[nm] = pars
             else:
-                keys = sorted(js)[:15] if isinstance(js, dict) else type(js).__name__
-                print(f"scorecard probe: no par list found for {nm}; shape: {keys}")
+                tot = js.get("mensPar") if isinstance(js, dict) else None
+                nh9 = js.get("noOfHoles") if isinstance(js, dict) else None
+                print(f"scorecard probe: no per-hole par list for {nm} "
+                      f"(total par {tot}, {nh9} holes) - GPS inference stays authoritative")
         if report:
             json.dump(report, open("course_pars.json", "w"), indent=1, sort_keys=True)
             print("scorecard probe: wrote course_pars.json (real scorecard pars, no GPS; "
