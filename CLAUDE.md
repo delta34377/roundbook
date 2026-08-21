@@ -43,7 +43,7 @@ PY
 node --check /tmp/app.js
 ```
 
-The pipeline is verified end-to-end: prep_data.py regenerates the shipped dash_data.json from the raw export with an exact deep-diff match (Jul 2026).
+The pipeline is verified end-to-end: prep_data.py regenerates the shipped dash_data.json from the raw export with an exact deep-diff match (Jul 2026). Aug 2026: par inference is now pooled per (course, hole) (see Data conventions), so the shipped dash_data.json predates the code by one expected diff - round 28256762 hole 11 par 5->4 (round par 36->35, ou 7->8) - until it is regenerated; everything else is byte-identical. That hole's three GPS reads split 463/468/527 and need the scorecard to settle; the courses_detail probe in prep_data.py reports it on the next local run.
 
 ## Web app + sync (Jul 2026)
 
@@ -68,7 +68,7 @@ The pipeline is verified end-to-end: prep_data.py regenerates the shipped dash_d
 
 - Per-shot `distance` is METERS. x1.09361 = yards, x3.28084 = feet. A putt's `distance` is the length of the putt faced.
 - Hole score = `noOfShots` (not scoreOverride). Holes with no shots are skipped.
-- Par is GPS-inferred: approachShotId==1 -> par 3; else first-shot-to-pin distance <240y par 3, <=470y par 4, else par 5. Verified: inferred per-hole par sums exactly to every round's actual scorecard par and over/under (zero gap across all rounds).
+- Par is GPS-inferred, pooled per (course, holeId) across ALL recorded plays (Aug 2026; was per-round, which let one short-logged tee start flip Birchwood #2 - a hair over 470y - to par 4 and eat birdies): any play with approachShotId==1 -> par 3; else median tee-to-pin across plays, <240y par 3, <=470y par 4, else par 5. The raw export's courses_detail section holds the REAL scorecard pars (arccos_export.py already pulls /courses/{id}); prep_data.py does not consume it yet because its shape is unverified - a probe at the bottom of prep_data.py finds the pars, prints scorecard-vs-inferred mismatches, and writes course_pars.json (pars only, committable). Once one real course_pars.json is seen, wire scorecard pars in as the source of truth with inference as fallback.
 - gir: 'T'->1, 'F'->0, else null. fw is null on par 3s. miss is 'L'/'R' only when the fairway was missed.
 - Club maps (from Mark's actual bag; 3W is in the bag but has zero recorded shots):
   clubType->name: {1:Driver, 2:3W, 35:3H, 5:4i, 6:5i, 7:6i, 8:7i, 9:8i, 10:9i, 11:PW, 44:GW, 53:56deg, 56:60deg, 12:Putter}

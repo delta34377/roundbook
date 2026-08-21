@@ -7,7 +7,7 @@
 // the parity check; if the two ever disagree, prep_data.py wins.
 //
 // Field reference (hole record) — same as prep_data.py:
-//   h     hole number            par   GPS-inferred par (verified vs scorecards)
+//   h     hole number            par   GPS-inferred par, pooled per course+hole (median)
 //   score noOfShots              putts Arccos putt count (Air caveat: may include fringe)
 //   gir   1/0/null               fw    1/0/null (null on par 3)   miss 'L'/'R'/''
 //   drv   driver distance yds    tee   tee club name              pen  penalty strokes
@@ -59,9 +59,11 @@ function pyRound(x: number, ndigits?: number): number {
   return q;
 }
 
-// statistics.mean / statistics.median over the integer lists we feed them
-// reduce to exact integer sums and correctly-rounded division, which plain JS
-// arithmetic reproduces exactly.
+// statistics.mean over the integer lists we feed it reduces to an exact
+// integer sum and one division, which plain JS reproduces exactly.
+// statistics.median (integers here, raw tee-to-pin doubles in the par pool)
+// is sort-then-middle, averaging the two middle values when even; identical
+// IEEE-754 inputs give bit-identical results in both languages.
 function mean(a: number[]): number {
   let s = 0;
   for (const v of a) s += v;
@@ -102,13 +104,42 @@ function enu(lat: number, lon: number, latp: number, lonp: number): [number, num
   return [E, N];
 }
 
-function parOf(h: any): number {
-  const s: any[] = h.shots ?? [];
-  if (!s.length) return 4;
-  if (h.approachShotId === 1) return 3;
-  const L = yd(s[0]?.startLat, s[0]?.startLong, h.pinLat, h.pinLong);
-  if (L == null) return 4;
-  return L < 240 ? 3 : L <= 470 ? 4 : 5;
+// Par is a property of the hole, not of one round's GPS trace: pool every
+// recorded play of a (course, hole) and classify ONCE from the median
+// tee-to-pin distance (any play flagged approachShotId===1 marks a par 3).
+// Mirrors prep_data.py's build_par_pool/par_of exactly; the median of the
+// same doubles is bit-identical between statistics.median and median() above.
+type ParObs = { p3: boolean; ds: number[] };
+const parKey = (crs: string, holeId: any) => `${crs}\u0000${holeId ?? null}`;
+
+function buildParPool(roundsDetail: any[]): Map<string, ParObs> {
+  const pool = new Map<string, ParObs>();
+  for (const rd of roundsDetail) {
+    const crs = rd.courseName ?? '?';
+    for (const h of rd.holes) {
+      if (!h || !(h.noOfShots ?? 0)) continue;
+      const s: any[] = h.shots ?? [];
+      if (!s.length) continue;
+      const k = parKey(crs, h.holeId);
+      let o = pool.get(k);
+      if (!o) pool.set(k, (o = { p3: false, ds: [] }));
+      if (h.approachShotId === 1) o.p3 = true;
+      const L = yd(s[0]?.startLat, s[0]?.startLong, h.pinLat, h.pinLong);
+      if (L != null) o.ds.push(L);
+    }
+  }
+  return pool;
+}
+
+function parOf(pool: Map<string, ParObs>, crs: string, h: any): number {
+  const o = pool.get(parKey(crs, h.holeId));
+  if (!o) return 4;
+  if (o.p3) return 3;
+  if (o.ds.length) {
+    const L = median(o.ds);
+    return L < 240 ? 3 : L <= 470 ? 4 : 5;
+  }
+  return 4;
 }
 
 // EXACT mapping from bag config (clubType 35 = 3-hybrid; 3W in bag but no shots)
@@ -164,6 +195,7 @@ export function deriveDashData(d: any): any {
   const full = new Map<number, number[]>();       // defaultdict(list), insertion-ordered
   const usage = new Map<number, number>();        // Counter, insertion-ordered
   const drvShots: any[] = [];
+  const parPool = buildParPool(d.rounds_detail);
 
   for (const rd of d.rounds_detail) {
     const dt = ((rd.startTime ?? '') as string).slice(0, 10);
@@ -172,7 +204,7 @@ export function deriveDashData(d: any): any {
     let rs = 0, rp = 0, nh = 0;
     for (const h of rd.holes) {
       if (!h || !(h.noOfShots ?? 0)) continue;
-      const par = parOf(h);
+      const par = parOf(parPool, crs, h);
       const sc = h.noOfShots;
       nh += 1; rs += sc; rp += par;
       const s: any[] = h.shots ?? [];

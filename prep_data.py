@@ -10,7 +10,7 @@ Usage:
   python3 prep_data.py raw.json out.json        # explicit paths
 
 Field reference (hole record):
-  h     hole number            par   GPS-inferred par (verified vs scorecards)
+  h     hole number            par   GPS-inferred par, pooled per course+hole (median)
   score noOfShots              putts Arccos putt count (Air caveat: may include fringe)
   gir   1/0/None               fw    1/0/None (None on par 3)   miss 'L'/'R'/''
   drv   driver distance yds    tee   tee club name              pen  penalty strokes
@@ -48,13 +48,37 @@ def enu(lat, lon, latp, lonp):
     N = (lat - latp) * 110540.0
     return E, N
 
-def par_of(h):
-    s = h.get("shots", [])
-    if not s: return 4
-    if h.get("approachShotId") == 1: return 3
-    L = yd(s[0].get("startLat"), s[0].get("startLong"), h.get("pinLat"), h.get("pinLong"))
-    if L is None: return 4
-    return 3 if L < 240 else (4 if L <= 470 else 5)
+# Par is a property of the hole, not of one round's GPS trace, so pool every
+# recorded play of a (course, hole) and classify ONCE from the median tee-to-pin
+# distance. Per-round inference let a single short-logged tee start flip a par:
+# Birchwood's 2nd sits just past the 470yd par-5 line and read under it on bad
+# GPS days, turning birdies into pars. Any play flagged approachShotId==1 marks
+# the hole a par 3 (same precedence as before). The exporter's courses_detail
+# section has the real scorecard pars; see the probe at the bottom of this file.
+def build_par_pool(rounds_detail):
+    pool = defaultdict(lambda: {"p3": False, "ds": []})
+    for rd in rounds_detail:
+        crs = rd.get("courseName", "?")
+        for h in rd["holes"]:
+            if not h or not (h.get("noOfShots") or 0): continue
+            s = h.get("shots", [])
+            if not s: continue
+            o = pool[(crs, h.get("holeId"))]
+            if h.get("approachShotId") == 1: o["p3"] = True
+            L = yd(s[0].get("startLat"), s[0].get("startLong"), h.get("pinLat"), h.get("pinLong"))
+            if L is not None: o["ds"].append(L)
+    return pool
+
+par_pool = build_par_pool(d["rounds_detail"])
+
+def par_of(crs, h):
+    o = par_pool.get((crs, h.get("holeId")))
+    if o is None: return 4
+    if o["p3"]: return 3
+    if o["ds"]:
+        L = median(o["ds"])
+        return 3 if L < 240 else (4 if L <= 470 else 5)
+    return 4
 
 # EXACT mapping from bag config (clubType 35 = 3-hybrid; 3W in bag but no shots)
 NAME = {1:"Driver",2:"3W",35:"3H",5:"4i",6:"5i",7:"6i",8:"7i",9:"8i",10:"9i",
@@ -106,7 +130,7 @@ for rd in d["rounds_detail"]:
     hrecs = []; rs = rp = 0; nh = 0
     for h in rd["holes"]:
         if not h or not (h.get("noOfShots") or 0): continue
-        par = par_of(h); sc = h["noOfShots"]; nh += 1; rs += sc; rp += par
+        par = par_of(crs, h); sc = h["noOfShots"]; nh += 1; rs += sc; rp += par
         s = h.get("shots", []); tee = s[0] if s else None
         pin = (h.get("pinLat"), h.get("pinLong"))
         pen = sum(x.get("noOfPenalties", 0) for x in s)
@@ -188,3 +212,69 @@ payload = {"meta": {"nRounds": len(rounds), "nHoles": sum(r["n"] for r in rounds
 json.dump(payload, open(OUT, "w"))
 print(f"wrote {OUT}: {len(rounds)} rounds, {payload['meta']['nHoles']} holes, "
       f"{payload['meta']['dateMin']} to {payload['meta']['dateMax']}")
+
+# --- scorecard probe (diagnostic only; the payload above is untouched) -------
+# arccos_export.py pulls /courses/{id} into courses_detail ("real hole
+# pars/yardages") but its exact shape has not been seen against a live export
+# yet, so pars are still inferred above. This probe hunts for a per-hole par
+# list in whatever shape courses_detail has, reports any disagreement with the
+# inferred pars, and writes course_pars.json (pars only, no coordinates, safe
+# to commit) so the real scorecard can be wired in as the source of truth.
+try:
+    def find_hole_pars(js):
+        """DFS for the first list of >=6 dicts carrying a par-like key."""
+        found = []
+        def walk(x):
+            if found: return
+            if isinstance(x, list) and len(x) >= 6 and all(isinstance(e, dict) for e in x):
+                keys = set().union(*[set(e) for e in x])
+                pk = next((k for k in keys if k.lower() == "par"), None)
+                nk = next((k for k in ("holeNumber", "holeId", "number", "hole") if k in keys), None)
+                if pk and all(isinstance(e.get(pk), (int, float)) and 3 <= e[pk] <= 6 for e in x):
+                    found.append((x, pk, nk)); return
+            if isinstance(x, dict):
+                for v in x.values(): walk(v)
+            elif isinstance(x, list):
+                for v in x: walk(v)
+        walk(js)
+        if not found: return None
+        holes, pk, nk = found[0]
+        return {int(e.get(nk, i + 1)): int(e[pk]) for i, e in enumerate(holes)}
+
+    cd = d.get("courses_detail") or {}
+    if not cd:
+        print("scorecard probe: export has no courses_detail section "
+              "(re-run arccos_export.py to include it)")
+    else:
+        id2name = {str(r["courseId"]): r.get("courseName")
+                   for r in (d.get("rounds_summary") or []) if r.get("courseId")}
+        report = {}
+        for cid, js in cd.items():
+            nm = id2name.get(str(cid)) or (js.get("name") if isinstance(js, dict) else None) or str(cid)
+            pars = find_hole_pars(js)
+            if pars:
+                report[nm] = pars
+            else:
+                keys = sorted(js)[:15] if isinstance(js, dict) else type(js).__name__
+                print(f"scorecard probe: no par list found for {nm}; shape: {keys}")
+        if report:
+            json.dump(report, open("course_pars.json", "w"), indent=1, sort_keys=True)
+            print("scorecard probe: wrote course_pars.json (real scorecard pars, no GPS; "
+                  "commit it so inference can become fallback-only)")
+            mism = set()
+            for r in rounds:
+                pars = report.get(r["course"], {})
+                for h in r["holes"]:
+                    sp = pars.get(h["h"])
+                    if sp is None and pars and h["h"] and h["h"] > 9 and max(pars) <= 9:
+                        sp = pars.get(h["h"] - 9)   # 9-hole course played twice
+                    if sp is not None and sp != h["par"]:
+                        mism.add(f"  {r['date']} {r['course']} hole {h['h']}: "
+                                 f"scorecard par {sp}, inferred {h['par']}")
+            if mism:
+                print("scorecard probe: MISMATCHES between scorecard and inference:")
+                for m in sorted(mism): print(m)
+            else:
+                print("scorecard probe: inferred pars agree with the scorecard on every hole played")
+except Exception as e:  # diagnostics must never break the pipeline
+    print(f"scorecard probe: skipped ({type(e).__name__}: {e})")
