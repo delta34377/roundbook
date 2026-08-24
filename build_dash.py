@@ -264,6 +264,7 @@ const endLab={id:'el',afterDatasetsDraw(c){if(!c.$lab)return;const x=c.ctx,m=c.g
 const sortedDates=[...new Set(D.rounds.map(r=>r.date))].sort();
 let state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
 let frT=50;
+let lastN=null;
 
 function filtered(){
   const lo=sortedDates[state.fromIdx], hi=sortedDates[state.toIdx];
@@ -949,7 +950,8 @@ window.addEventListener('DOMContentLoaded',()=>{
     document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
     t.classList.add('on');document.getElementById('p-'+t.dataset.tab).classList.add('on');renderActive();});
   // course dropdown
-  document.getElementById('courseSel').onchange=()=>{state.course=document.getElementById('courseSel').value;updateSummary();renderActive();};
+  document.getElementById('courseSel').onchange=()=>{state.course=document.getElementById('courseSel').value;
+    if(lastN)applyLastN();else{updateSummary();renderActive();}};
   // date range
   const f=document.getElementById('fromR'),tt=document.getElementById('toR');
   f.max=tt.max=sortedDates.length-1;f.value=0;tt.value=sortedDates.length-1;
@@ -957,9 +959,18 @@ window.addEventListener('DOMContentLoaded',()=>{
     document.getElementById('fromV').textContent=fmtDate(sortedDates[state.fromIdx]);
     document.getElementById('toV').textContent=fmtDate(sortedDates[state.toIdx]);
     updateSummary();renderActive();}
-  f.oninput=dr;tt.oninput=dr;
+  // last-N shortcuts: sliders jump to the span holding the newest N rounds of
+  // the course filter, and follow course changes until a slider moves by hand
+  function applyLastN(){
+    const ds=D.rounds.filter(r=>state.course==='All'||r.course===state.course).map(r=>r.date).sort();
+    f.value=Math.max(0,sortedDates.indexOf(ds[Math.max(0,ds.length-lastN)]));tt.value=sortedDates.length-1;dr();}
+  function clearLastN(){lastN=null;document.querySelectorAll('[data-ln]').forEach(x=>x.classList.remove('on'));}
+  document.querySelectorAll('[data-ln]').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('[data-ln]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    lastN=+b.dataset.ln;applyLastN();});
+  f.oninput=()=>{clearLastN();dr();};tt.oninput=()=>{clearLastN();dr();};
   document.getElementById('resetF').onclick=()=>{state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
-    f.value=0;tt.value=sortedDates.length-1;document.getElementById('courseSel').value='All';dr();};
+    clearLastN();f.value=0;tt.value=sortedDates.length-1;document.getElementById('courseSel').value='All';dr();};
   // tee slider
   const dm=document.getElementById('drvMin');dm.oninput=()=>{drvMin=+dm.value;updateDrvSlider();};
   // gap threshold
@@ -992,6 +1003,9 @@ BODY = """
   <div class="filters">
     <div class="fgroup"><span class="flab">Course</span>
       <div class="btns" id="coursebtns">__COURSE_SELECT__</div>
+    </div>
+    <div class="fgroup"><span class="flab">Last rounds</span>
+      <div class="btns"><button class="btn" data-ln="5">5</button><button class="btn" data-ln="10">10</button><button class="btn" data-ln="20">20</button></div>
     </div>
     <div class="fgroup"><span class="flab">From</span>
       <div class="rangewrap"><input type="range" id="fromR" min="0" step="1"><span class="rv" id="fromV"></span></div>
