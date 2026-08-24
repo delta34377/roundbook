@@ -38,7 +38,7 @@ const endLab={id:'el',afterDatasetsDraw(c){if(!c.$lab)return;const x=c.ctx,m=c.g
   m.data.forEach((b,i)=>{x.fillText(c.$lab[i],b.x+8,b.y);});x.restore();}};
 
 // ---- state ----
-let sortedDates, state, frT;
+let sortedDates, state, frT, lastN;
 
 function filtered(){
   const lo=sortedDates[state.fromIdx], hi=sortedDates[state.toIdx];
@@ -686,7 +686,7 @@ export function initRoundBook(rootEl, data){
   if(D.hcp==null)D.hcp=13.7; // CLAUDE.md rule 6; the sync/seed inject the real value
   sortedDates=[...new Set(D.rounds.map(r=>r.date))].sort();
   state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
-  frT=50; drvMin=150; selClub=0; gapThresh=18; openRound=null; benchHcp=null;
+  frT=50; lastN=null; drvMin=150; selClub=0; gapThresh=18; openRound=null; benchHcp=null;
   buildCourseSelect();
   // tabs
   root.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -694,7 +694,8 @@ export function initRoundBook(rootEl, data){
     root.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
     t.classList.add('on');$('p-'+t.dataset.tab).classList.add('on');renderActive();});
   // course dropdown
-  $('courseSel').onchange=()=>{state.course=$('courseSel').value;updateSummary();renderActive();};
+  $('courseSel').onchange=()=>{state.course=$('courseSel').value;
+    if(lastN)applyLastN();else{updateSummary();renderActive();}};
   // date range
   const f=$('fromR'),tt=$('toR');
   f.max=tt.max=sortedDates.length-1;f.value=0;tt.value=sortedDates.length-1;
@@ -702,9 +703,18 @@ export function initRoundBook(rootEl, data){
     $('fromV').textContent=fmtDate(sortedDates[state.fromIdx]);
     $('toV').textContent=fmtDate(sortedDates[state.toIdx]);
     updateSummary();renderActive();}
-  f.oninput=dr;tt.oninput=dr;
+  // last-N shortcuts: sliders jump to the span holding the newest N rounds of
+  // the course filter, and follow course changes until a slider moves by hand
+  function applyLastN(){
+    const ds=D.rounds.filter(r=>state.course==='All'||r.course===state.course).map(r=>r.date).sort();
+    f.value=Math.max(0,sortedDates.indexOf(ds[Math.max(0,ds.length-lastN)]));tt.value=sortedDates.length-1;dr();}
+  function clearLastN(){lastN=null;root.querySelectorAll('[data-ln]').forEach(x=>x.classList.remove('on'));}
+  root.querySelectorAll('[data-ln]').forEach(b=>b.onclick=()=>{
+    root.querySelectorAll('[data-ln]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+    lastN=+b.dataset.ln;applyLastN();});
+  f.oninput=()=>{clearLastN();dr();};tt.oninput=()=>{clearLastN();dr();};
   $('resetF').onclick=()=>{state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
-    f.value=0;tt.value=sortedDates.length-1;$('courseSel').value='All';dr();};
+    clearLastN();f.value=0;tt.value=sortedDates.length-1;$('courseSel').value='All';dr();};
   // tee slider
   const dm=$('drvMin');dm.oninput=()=>{drvMin=+dm.value;updateDrvSlider();};
   // gap threshold
