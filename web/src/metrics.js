@@ -66,7 +66,7 @@ export function dedupeDates(ds){const cnt={};ds.forEach(d=>cnt[d]=(cnt[d]||0)+1)
 // plotted point needs. Windows pool holes, so an 18 counts twice a nine and a
 // short round cannot swing a point. Nothing here fits a line through rounds.
 const TREND_Z=1.64,TREND_MIN_ROUNDS=4,TREND_PRIOR_MAX=10,TREND_ROLL=3;
-const tSgn=(v,d)=>(v>=0?'+':'')+v.toFixed(d);
+const tSgn=(v,d)=>{const s=v.toFixed(d),n=+s;return (n>=0?'+':'')+(n===0?(0).toFixed(d):s);};
 const tPts=v=>Math.abs(Math.round(v))===1?' pt':' pts';
 const TREND=[
  {key:'ou18',label:'Over par / 18',sl:'scoring',dir:'lower',kind:'mean',scale:18,bench:'score',gate:27,dotMin:7,rollMin:18,minEff:2,unitW:'holes',units:H=>H.map(h=>h.score-h.par),fmt:v=>tSgn(v,1),dfmt:v=>tSgn(v,1)+' strokes'},
@@ -86,20 +86,18 @@ const tMed=a=>{const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);re
 const tUnit=(k,w)=>k===1?w.slice(0,-1):w;
 function trendValue(m,u){if(!u.length)return null;return m.kind==='median'?tMed(u):tMean(u)*m.scale;}
 function trendSE(m,u){if(u.length<2||m.kind==='median')return null;if(m.kind==='rate'){const p=(u.reduce((s,x)=>s+x,0)+0.5)/(u.length+1);return Math.sqrt(p*(1-p)/u.length)*m.scale;}return Math.sqrt(tVar(u)/u.length)*m.scale;}
-// two-proportion z on pooled p; Welch z on sample variances; Mann-Whitney z with midranks. All signed recent minus prior.
+// two-proportion z on pooled p; two-sample z on pooled variance (a block with no spread borrows the other's); Mann-Whitney z with midranks. All signed recent minus prior; 0 when the standard error is 0.
 function propZ(a,b){const ka=a.reduce((s,x)=>s+x,0),kb=b.reduce((s,x)=>s+x,0);const p=(ka+kb)/(a.length+b.length);if(p<=0||p>=1)return 0;const s=Math.sqrt(p*(1-p)*(1/a.length+1/b.length));return s>0?(kb/b.length-ka/a.length)/s:0;}
-function welchZ(a,b){const s=Math.sqrt(tVar(a)/a.length+tVar(b)/b.length);if(!(s>0))return 0;return (tMean(b)-tMean(a))/s;}
+function poolZ(a,b){const nP=a.length,nR=b.length;if(nP+nR<3)return 0;const sp=((nP-1)*tVar(a)+(nR-1)*tVar(b))/(nP+nR-2);const s=Math.sqrt(sp*(1/nP+1/nR));if(!(s>0))return 0;return (tMean(b)-tMean(a))/s;}
 function mwZ(a,b){const all=[...a.map(x=>[x,0]),...b.map(x=>[x,1])].sort((p,q)=>p[0]-q[0]);const ranks=new Array(all.length);let i=0;while(i<all.length){let j=i;while(j+1<all.length&&all[j+1][0]===all[i][0])j++;const r=(i+j)/2+1;for(let k=i;k<=j;k++)ranks[k]=r;i=j+1;}let rb=0;all.forEach((p,k)=>{if(p[1]===1)rb+=ranks[k];});const n1=a.length,n2=b.length;const U=rb-n2*(n2+1)/2;const sd=Math.sqrt(n1*n2*(n1+n2+1)/12);return sd>0?(U-n1*n2/2)/sd:0;}
 function trendVerdict(m,P,R){
   const a=m.units(P),b=m.units(R);
   const out={nP:a.length,nR:b.length,before:trendValue(m,a),now:trendValue(m,b)};
   if(a.length<m.gate||b.length<m.gate){out.state='early';out.needP=Math.max(0,m.gate-a.length);out.needR=Math.max(0,m.gate-b.length);return out;}
   const d=out.now-out.before;out.delta=d;
-  out.z=m.kind==='rate'?propZ(a,b):m.kind==='median'?mwZ(a,b):welchZ(a,b);
+  out.z=m.kind==='rate'?propZ(a,b):m.kind==='median'?mwZ(a,b):poolZ(a,b);
   out.good=m.dir==='lower'?d<0:d>0;
-  const zeroVar=u=>u.length<2||tVar(u)===0;
-  if(Math.abs(d)<m.minEff)out.state='steady';
-  else if(m.kind==='mean'&&(zeroVar(a)||zeroVar(b)))out.state='noise';
+  if(Math.abs(d)<m.minEff-1e-9)out.state='steady';
   else if(Math.abs(out.z)>=TREND_Z)out.state=out.good?'improving':'slipping';
   else out.state='noise';
   return out;
@@ -116,7 +114,7 @@ function trendModel(rounds,trW,hcp){
     const roll=rs.map((r,i)=>{if(i<TREND_ROLL-1)return null;const u=m.units(tHoles(rs.slice(i-TREND_ROLL+1,i+1)));return u.length>=m.rollMin?{v:trendValue(m,u),se:trendSE(m,u),n:u.length}:null;});
     const all=m.units(allH);
     const v=PH?trendVerdict(m,PH,RH):null;
-    const benchV=m.bench?(m.key==='ou18'?bench('score',hcp)-t.parPer18:bench(m.bench,hcp)):null;
+    const benchV=m.bench?(m.key==='ou18'?(t.parPer18==null?null:bench('score',hcp)-t.parPer18):bench(m.bench,hcp)):null;
     const varAll=all.length>1?(m.kind==='rate'?tMean(all)*(1-tMean(all)):tVar(all)):0;
     const effU=m.kind==='median'?m.minEff:m.minEff/m.scale;
     const need=varAll>0?Math.ceil(2*TREND_Z*TREND_Z*varAll/(effU*effU)):null;
@@ -157,7 +155,7 @@ function trendHeadline(t){
   }
   const strong=V.state==='improving'||V.state==='slipping'||imp.length>=2||slp.length>=2;
   if(!strong){
-    if(clear.length===1){const c=clear[0];return[`One clear change over the last ${Rw} rounds: ${c.m.sl} is ${c.v.good?'better':'worse'}.`,`${c.m.label} went from ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}, more than the noise. Everything else is steady or inside noise. ${ouTxt} One clear mover out of ${TREND.length} is worth watching, not yet a conclusion.${mixTxt}`];}
+    if(clear.length===1){const c=clear[0];return[`One clear change over the last ${Rw} rounds: ${c.m.sl} ${c.v.good?'improved':'slipped'}.`,`${c.m.label} went from ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}, more than the noise. Everything else is steady or inside noise. ${ouTxt} One clear mover out of ${TREND.length} is worth watching, not yet a conclusion.${mixTxt}`];}
     return[`Two changes over the last ${Rw} rounds, pulling in different directions.`,`${fm(imp[0])} is better; ${fm(slp[0])} is worse. ${ouTxt} Two movers out of ${TREND.length} in opposite directions is worth watching, not yet a conclusion.${mixTxt}`];
   }
   const names=a=>{const n=a.slice(0,3).map(x=>x.m.sl);return n.length>1?n.slice(0,-1).join(', ')+' and '+n[n.length-1]:n[0];};

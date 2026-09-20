@@ -222,7 +222,7 @@
 @media(max-width:680px){.rb-scope .bench-head{grid-template-columns:108px 42px 1fr 42px}.rb-scope .bench-row{grid-template-columns:108px 42px 1fr 42px}.rb-scope .bench-badge{display:none}.rb-scope .bench-name{font-size:12px}}
 
 /* Trends tab: metric chips with a third line, hero chart, window tiles, ranked
-   .rb-scope rows. Mirrored from build_dash.py's CSS - keep in step. */
+   rows. Mirrored from build_dash.py's CSS - keep in step. */
 .rb-scope .tr-chip{flex:1 1 104px;min-width:104px}
 .rb-scope .tr-chip .cn{margin:0 0 4px}
 .rb-scope .tr-chip .ct{font-size:11px;margin-top:4px;color:var(--muted)}

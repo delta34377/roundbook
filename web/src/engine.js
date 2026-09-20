@@ -682,7 +682,7 @@ function renderTrends(){
   const chipVal=x=>{const v=x.v;if(v&&v.now!=null&&v.nR>=x.m.dotMin)return x.m.fmt(v.now);if(x.allN>=x.m.dotMin)return x.m.fmt(x.allV);return '–';};
   const third=x=>{const v=x.v;
     if(!N)return['no rounds','dim'];
-    if(!v)return[`${x.allN} ${x.m.unitW}`,'dim'];
+    if(!v)return[`${x.allN} ${tUnit(x.allN,x.m.unitW)}`,'dim'];
     if(v.state==='early')return['too few','dim'];
     if(v.state==='steady')return[`${x.m.dfmt(v.delta)} · steady`,''];
     if(v.state==='noise')return[`${arrow(v.delta)} ${x.m.dfmt(v.delta)} · noise`,''];
@@ -708,7 +708,7 @@ function renderTrends(){
     list.innerHTML=`<p class="note" style="margin:0">${N?`Windows appear at ${TREND_MIN_ROUNDS} rounds. The chips above show values across the ${N} round${N===1?'':'s'} in view.`:'No rounds in this filter.'}</p>`;
   }
   const cg=TREND.filter(m=>m.unitW!=='holes').map(m=>m.gate);
-  $('trNote').textContent=`Windows are pooled by hole, so an 18-hole round counts twice a nine and a short round cannot swing a point. Calls compare the last few rounds with the ones before them; nothing here fits a line through the rounds. A metric is called better or worse only when it moved more than its practical minimum and more than the noise in the holes on each side, with at least ${TREND[0].gate} holes (or ${Math.min(...cg)} to ${Math.max(...cg)} chances) a side; steady means it moved less than the minimum, not that nothing changed; inside noise means it moved but the sample cannot separate that from luck. ${TREND.length} metrics are tested at once, so about one false call in ten unchanged views is expected, which is why a single mover gets a softer headline. Putts are as recorded: Arccos Air has no putter sensor, so fringe strokes may be logged as putts and three-putts are a ceiling (the Putting tab has the sensitivity toggle). No lie, sand or strokes-gained data exists in the export, so scrambling is score-based and inside-150 uses approach distance, not lie. Wedge proximity counts only shots started from 50 to 150 yards so a change in course mix cannot pose as wedge play. Benchmark lines are the handicap table interpolated at ${D.hcp}; penalties compare to it per 18 holes and over par uses the par of the holes in view. On the All filter a window can straddle courses; the course dropdown isolates one track.`;
+  $('trNote').textContent=`Windows are pooled by hole, so an 18-hole round counts twice a nine and a short round cannot swing a point. Calls compare the last few rounds with the ones before them; nothing here fits a line through the rounds. A metric is called better or worse only when it moved more than its practical minimum and more than the noise in the holes on each side, with at least ${TREND[0].gate} holes (or ${Math.min(...cg)} to ${Math.max(...cg)} chances) a side; steady means it moved less than the minimum, not that nothing changed; inside noise means it moved but the sample cannot separate that from luck. Each metric is tested at a level that lets it fire about one time in ten by luck, and ${TREND.length} are tested at once, so an unchanged view will often show one false call; that is why a single mover gets a softer headline. Putts are as recorded: Arccos Air has no putter sensor, so fringe strokes may be logged as putts and three-putts are a ceiling (the Putting tab has the sensitivity toggle). No lie, sand or strokes-gained data exists in the export, so scrambling is score-based and inside-150 uses approach distance, not lie. Wedge proximity counts only shots started from 50 to 150 yards so a change in course mix cannot pose as wedge play. Benchmark lines are the handicap table interpolated at ${D.hcp}; penalties compare to it per 18 holes and over par uses the par of the holes in view. On the All filter a window can straddle courses; the course dropdown isolates one track.`;
   renderTrendSel();
 }
 function renderTrendSel(){
@@ -724,20 +724,23 @@ function renderTrendSel(){
   if(!N){
     if(charts['trHero']){charts['trHero'].destroy();delete charts['trHero'];}
     const cv=$('trHero');cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
-    emp.style.display='';$('trLegend').innerHTML='';
+    emp.style.display='';$('trLegend').innerHTML='';$('trHeroCap').textContent='';
   } else {
     emp.style.display='none';
     const labels=dedupeDates(t.rs.map(r=>r.date));
     const ds=[];
+    // band clamped to the metric's domain: rates and counts never go below 0, percentages never above 100
+    const clampLo=q=>m.key==='ou18'?q:Math.max(0,q),clampHi=q=>isPct?Math.min(100,q):q;
+    const hiD=x.roll.map(r=>r&&r.se!=null?clampHi(r.v+r.se):null),loD=x.roll.map(r=>r&&r.se!=null?clampLo(r.v-r.se):null);
     if(band){
-      ds.push({$k:'hi',data:x.roll.map(r=>r&&r.se!=null?r.v+r.se:null),borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:false,backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
-      ds.push({$k:'lo',data:x.roll.map(r=>r&&r.se!=null?r.v-r.se:null),borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:'-1',backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
+      ds.push({$k:'hi',data:hiD,borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:false,backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
+      ds.push({$k:'lo',data:loD,borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:'-1',backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
     }
     const rollPts=x.roll.filter(Boolean).length;
     ds.push({$k:'roll',data:x.roll.map(r=>r?r.v:null),borderColor:'#c9a24a',borderWidth:2,tension:0,pointRadius:rollPts===1?3:0,pointBackgroundColor:'#c9a24a',pointHoverRadius:4,spanGaps:false,order:1});
     ds.push({$k:'dots',data:x.dots,showLine:false,pointRadius:3.5,pointHoverRadius:5,pointBackgroundColor:'rgba(147,169,156,.75)',pointBorderColor:'transparent',order:2});
     const vals=[...x.dots,...x.roll.map(r=>r?r.v:null)].filter(q=>q!=null);
-    if(band)x.roll.forEach(r=>{if(r&&r.se!=null)vals.push(r.v+r.se,r.v-r.se);});
+    if(band)hiD.forEach((q,i)=>{if(q!=null)vals.push(q,loD[i]);});
     if(bv!=null)vals.push(bv);
     const ysc={grid:{color:GRID},border:{display:false}};
     if(m.key==='ou18'||m.key==='prox150'){if(vals.length){const lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*0.1);ysc.suggestedMin=lo-pad;ysc.suggestedMax=hi+pad;}}
@@ -755,12 +758,12 @@ function renderTrendSel(){
   const tiles=$('trTiles');
   if(hasWin&&v.state!=='early'){
     const sub=v.state==='improving'||v.state==='slipping'?'more than the noise':v.state==='noise'?'inside the noise':`under ${m.dfmt(m.minEff).replace('+','')}, called steady`;
-    tiles.innerHTML=trTile(m.fmt(v.before),'before',`${t.Pw} rounds · ${v.nP} ${m.unitW}`)+trTile(m.fmt(v.now),'recent',`${t.Rw} rounds · ${v.nR} ${m.unitW}`)+trTile(m.dfmt(v.delta),'change',sub,v.state==='improving'?'good':v.state==='slipping'?'leak':'');
+    tiles.innerHTML=trTile(m.fmt(v.before),'before',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(m.fmt(v.now),'recent',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile(m.dfmt(v.delta),'change',sub,v.state==='improving'?'good':v.state==='slipping'?'leak':'');
   } else if(hasWin){
     const need=[v.needP?`${v.needP} more earlier ${tUnit(v.needP,m.unitW)}`:'',v.needR?`${v.needR} more recent ${tUnit(v.needR,m.unitW)}`:''].filter(Boolean).join(', ');
-    tiles.innerHTML=trTile(v.before!=null&&v.nP>=m.dotMin?m.fmt(v.before):'–','before',`${t.Pw} rounds · ${v.nP} ${m.unitW}`)+trTile(v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–','recent',`${t.Rw} rounds · ${v.nR} ${m.unitW}`)+trTile('–','change',`needs ${need}`);
+    tiles.innerHTML=trTile(v.before!=null&&v.nP>=m.dotMin?m.fmt(v.before):'–','before',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–','recent',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile('–','change',`needs ${need}`);
   } else {
-    tiles.innerHTML=trTile(x.allN>=m.dotMin?m.fmt(x.allV):'–','in view',`${N} round${N===1?'':'s'} · ${x.allN} ${m.unitW}`)+trTile(N,'rounds',`a trend needs ${TREND_MIN_ROUNDS}`)+trTile('–','change','no windows yet');
+    tiles.innerHTML=trTile(x.allN>=m.dotMin?m.fmt(x.allV):'–','in view',`${N} round${N===1?'':'s'} · ${x.allN} ${tUnit(x.allN,m.unitW)}`)+trTile(N,'rounds',`a trend needs ${TREND_MIN_ROUNDS}`)+trTile('–','change','no windows yet');
   }
   // what a call would take, for the selected metric
   const pw=$('trPower');

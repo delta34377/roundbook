@@ -1209,7 +1209,7 @@ function dedupeDates(ds){const cnt={};ds.forEach(d=>cnt[d]=(cnt[d]||0)+1);const 
 // plotted point needs. Windows pool holes, so an 18 counts twice a nine and a
 // short round cannot swing a point. Nothing here fits a line through rounds.
 const TREND_Z=1.64,TREND_MIN_ROUNDS=4,TREND_PRIOR_MAX=10,TREND_ROLL=3;
-const tSgn=(v,d)=>(v>=0?'+':'')+v.toFixed(d);
+const tSgn=(v,d)=>{const s=v.toFixed(d),n=+s;return (n>=0?'+':'')+(n===0?(0).toFixed(d):s);};
 const tPts=v=>Math.abs(Math.round(v))===1?' pt':' pts';
 const TREND=[
  {key:'ou18',label:'Over par / 18',sl:'scoring',dir:'lower',kind:'mean',scale:18,bench:'score',gate:27,dotMin:7,rollMin:18,minEff:2,unitW:'holes',units:H=>H.map(h=>h.score-h.par),fmt:v=>tSgn(v,1),dfmt:v=>tSgn(v,1)+' strokes'},
@@ -1229,20 +1229,18 @@ const tMed=a=>{const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);re
 const tUnit=(k,w)=>k===1?w.slice(0,-1):w;
 function trendValue(m,u){if(!u.length)return null;return m.kind==='median'?tMed(u):tMean(u)*m.scale;}
 function trendSE(m,u){if(u.length<2||m.kind==='median')return null;if(m.kind==='rate'){const p=(u.reduce((s,x)=>s+x,0)+0.5)/(u.length+1);return Math.sqrt(p*(1-p)/u.length)*m.scale;}return Math.sqrt(tVar(u)/u.length)*m.scale;}
-// two-proportion z on pooled p; Welch z on sample variances; Mann-Whitney z with midranks. All signed recent minus prior.
+// two-proportion z on pooled p; two-sample z on pooled variance (a block with no spread borrows the other's); Mann-Whitney z with midranks. All signed recent minus prior; 0 when the standard error is 0.
 function propZ(a,b){const ka=a.reduce((s,x)=>s+x,0),kb=b.reduce((s,x)=>s+x,0);const p=(ka+kb)/(a.length+b.length);if(p<=0||p>=1)return 0;const s=Math.sqrt(p*(1-p)*(1/a.length+1/b.length));return s>0?(kb/b.length-ka/a.length)/s:0;}
-function welchZ(a,b){const s=Math.sqrt(tVar(a)/a.length+tVar(b)/b.length);if(!(s>0))return 0;return (tMean(b)-tMean(a))/s;}
+function poolZ(a,b){const nP=a.length,nR=b.length;if(nP+nR<3)return 0;const sp=((nP-1)*tVar(a)+(nR-1)*tVar(b))/(nP+nR-2);const s=Math.sqrt(sp*(1/nP+1/nR));if(!(s>0))return 0;return (tMean(b)-tMean(a))/s;}
 function mwZ(a,b){const all=[...a.map(x=>[x,0]),...b.map(x=>[x,1])].sort((p,q)=>p[0]-q[0]);const ranks=new Array(all.length);let i=0;while(i<all.length){let j=i;while(j+1<all.length&&all[j+1][0]===all[i][0])j++;const r=(i+j)/2+1;for(let k=i;k<=j;k++)ranks[k]=r;i=j+1;}let rb=0;all.forEach((p,k)=>{if(p[1]===1)rb+=ranks[k];});const n1=a.length,n2=b.length;const U=rb-n2*(n2+1)/2;const sd=Math.sqrt(n1*n2*(n1+n2+1)/12);return sd>0?(U-n1*n2/2)/sd:0;}
 function trendVerdict(m,P,R){
   const a=m.units(P),b=m.units(R);
   const out={nP:a.length,nR:b.length,before:trendValue(m,a),now:trendValue(m,b)};
   if(a.length<m.gate||b.length<m.gate){out.state='early';out.needP=Math.max(0,m.gate-a.length);out.needR=Math.max(0,m.gate-b.length);return out;}
   const d=out.now-out.before;out.delta=d;
-  out.z=m.kind==='rate'?propZ(a,b):m.kind==='median'?mwZ(a,b):welchZ(a,b);
+  out.z=m.kind==='rate'?propZ(a,b):m.kind==='median'?mwZ(a,b):poolZ(a,b);
   out.good=m.dir==='lower'?d<0:d>0;
-  const zeroVar=u=>u.length<2||tVar(u)===0;
-  if(Math.abs(d)<m.minEff)out.state='steady';
-  else if(m.kind==='mean'&&(zeroVar(a)||zeroVar(b)))out.state='noise';
+  if(Math.abs(d)<m.minEff-1e-9)out.state='steady';
   else if(Math.abs(out.z)>=TREND_Z)out.state=out.good?'improving':'slipping';
   else out.state='noise';
   return out;
@@ -1259,7 +1257,7 @@ function trendModel(rounds,trW,hcp){
     const roll=rs.map((r,i)=>{if(i<TREND_ROLL-1)return null;const u=m.units(tHoles(rs.slice(i-TREND_ROLL+1,i+1)));return u.length>=m.rollMin?{v:trendValue(m,u),se:trendSE(m,u),n:u.length}:null;});
     const all=m.units(allH);
     const v=PH?trendVerdict(m,PH,RH):null;
-    const benchV=m.bench?(m.key==='ou18'?bench('score',hcp)-t.parPer18:bench(m.bench,hcp)):null;
+    const benchV=m.bench?(m.key==='ou18'?(t.parPer18==null?null:bench('score',hcp)-t.parPer18):bench(m.bench,hcp)):null;
     const varAll=all.length>1?(m.kind==='rate'?tMean(all)*(1-tMean(all)):tVar(all)):0;
     const effU=m.kind==='median'?m.minEff:m.minEff/m.scale;
     const need=varAll>0?Math.ceil(2*TREND_Z*TREND_Z*varAll/(effU*effU)):null;
@@ -1300,7 +1298,7 @@ function trendHeadline(t){
   }
   const strong=V.state==='improving'||V.state==='slipping'||imp.length>=2||slp.length>=2;
   if(!strong){
-    if(clear.length===1){const c=clear[0];return[`One clear change over the last ${Rw} rounds: ${c.m.sl} is ${c.v.good?'better':'worse'}.`,`${c.m.label} went from ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}, more than the noise. Everything else is steady or inside noise. ${ouTxt} One clear mover out of ${TREND.length} is worth watching, not yet a conclusion.${mixTxt}`];}
+    if(clear.length===1){const c=clear[0];return[`One clear change over the last ${Rw} rounds: ${c.m.sl} ${c.v.good?'improved':'slipped'}.`,`${c.m.label} went from ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}, more than the noise. Everything else is steady or inside noise. ${ouTxt} One clear mover out of ${TREND.length} is worth watching, not yet a conclusion.${mixTxt}`];}
     return[`Two changes over the last ${Rw} rounds, pulling in different directions.`,`${fm(imp[0])} is better; ${fm(slp[0])} is worse. ${ouTxt} Two movers out of ${TREND.length} in opposite directions is worth watching, not yet a conclusion.${mixTxt}`];
   }
   const names=a=>{const n=a.slice(0,3).map(x=>x.m.sl);return n.length>1?n.slice(0,-1).join(', ')+' and '+n[n.length-1]:n[0];};
@@ -1362,7 +1360,7 @@ function renderTrends(){
   const chipVal=x=>{const v=x.v;if(v&&v.now!=null&&v.nR>=x.m.dotMin)return x.m.fmt(v.now);if(x.allN>=x.m.dotMin)return x.m.fmt(x.allV);return '–';};
   const third=x=>{const v=x.v;
     if(!N)return['no rounds','dim'];
-    if(!v)return[`${x.allN} ${x.m.unitW}`,'dim'];
+    if(!v)return[`${x.allN} ${tUnit(x.allN,x.m.unitW)}`,'dim'];
     if(v.state==='early')return['too few','dim'];
     if(v.state==='steady')return[`${x.m.dfmt(v.delta)} · steady`,''];
     if(v.state==='noise')return[`${arrow(v.delta)} ${x.m.dfmt(v.delta)} · noise`,''];
@@ -1388,7 +1386,7 @@ function renderTrends(){
     list.innerHTML=`<p class="note" style="margin:0">${N?`Windows appear at ${TREND_MIN_ROUNDS} rounds. The chips above show values across the ${N} round${N===1?'':'s'} in view.`:'No rounds in this filter.'}</p>`;
   }
   const cg=TREND.filter(m=>m.unitW!=='holes').map(m=>m.gate);
-  document.getElementById('trNote').textContent=`Windows are pooled by hole, so an 18-hole round counts twice a nine and a short round cannot swing a point. Calls compare the last few rounds with the ones before them; nothing here fits a line through the rounds. A metric is called better or worse only when it moved more than its practical minimum and more than the noise in the holes on each side, with at least ${TREND[0].gate} holes (or ${Math.min(...cg)} to ${Math.max(...cg)} chances) a side; steady means it moved less than the minimum, not that nothing changed; inside noise means it moved but the sample cannot separate that from luck. ${TREND.length} metrics are tested at once, so about one false call in ten unchanged views is expected, which is why a single mover gets a softer headline. Putts are as recorded: Arccos Air has no putter sensor, so fringe strokes may be logged as putts and three-putts are a ceiling (the Putting tab has the sensitivity toggle). No lie, sand or strokes-gained data exists in the export, so scrambling is score-based and inside-150 uses approach distance, not lie. Wedge proximity counts only shots started from 50 to 150 yards so a change in course mix cannot pose as wedge play. Benchmark lines are the handicap table interpolated at ${D.hcp}; penalties compare to it per 18 holes and over par uses the par of the holes in view. On the All filter a window can straddle courses; the course dropdown isolates one track.`;
+  document.getElementById('trNote').textContent=`Windows are pooled by hole, so an 18-hole round counts twice a nine and a short round cannot swing a point. Calls compare the last few rounds with the ones before them; nothing here fits a line through the rounds. A metric is called better or worse only when it moved more than its practical minimum and more than the noise in the holes on each side, with at least ${TREND[0].gate} holes (or ${Math.min(...cg)} to ${Math.max(...cg)} chances) a side; steady means it moved less than the minimum, not that nothing changed; inside noise means it moved but the sample cannot separate that from luck. Each metric is tested at a level that lets it fire about one time in ten by luck, and ${TREND.length} are tested at once, so an unchanged view will often show one false call; that is why a single mover gets a softer headline. Putts are as recorded: Arccos Air has no putter sensor, so fringe strokes may be logged as putts and three-putts are a ceiling (the Putting tab has the sensitivity toggle). No lie, sand or strokes-gained data exists in the export, so scrambling is score-based and inside-150 uses approach distance, not lie. Wedge proximity counts only shots started from 50 to 150 yards so a change in course mix cannot pose as wedge play. Benchmark lines are the handicap table interpolated at ${D.hcp}; penalties compare to it per 18 holes and over par uses the par of the holes in view. On the All filter a window can straddle courses; the course dropdown isolates one track.`;
   renderTrendSel();
 }
 function renderTrendSel(){
@@ -1404,20 +1402,23 @@ function renderTrendSel(){
   if(!N){
     if(charts['trHero']){charts['trHero'].destroy();delete charts['trHero'];}
     const cv=document.getElementById('trHero');cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
-    emp.style.display='';document.getElementById('trLegend').innerHTML='';
+    emp.style.display='';document.getElementById('trLegend').innerHTML='';document.getElementById('trHeroCap').textContent='';
   } else {
     emp.style.display='none';
     const labels=dedupeDates(t.rs.map(r=>r.date));
     const ds=[];
+    // band clamped to the metric's domain: rates and counts never go below 0, percentages never above 100
+    const clampLo=q=>m.key==='ou18'?q:Math.max(0,q),clampHi=q=>isPct?Math.min(100,q):q;
+    const hiD=x.roll.map(r=>r&&r.se!=null?clampHi(r.v+r.se):null),loD=x.roll.map(r=>r&&r.se!=null?clampLo(r.v-r.se):null);
     if(band){
-      ds.push({$k:'hi',data:x.roll.map(r=>r&&r.se!=null?r.v+r.se:null),borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:false,backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
-      ds.push({$k:'lo',data:x.roll.map(r=>r&&r.se!=null?r.v-r.se:null),borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:'-1',backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
+      ds.push({$k:'hi',data:hiD,borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:false,backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
+      ds.push({$k:'lo',data:loD,borderWidth:0,pointRadius:0,pointHoverRadius:0,fill:'-1',backgroundColor:'rgba(201,162,74,.12)',spanGaps:false,order:3});
     }
     const rollPts=x.roll.filter(Boolean).length;
     ds.push({$k:'roll',data:x.roll.map(r=>r?r.v:null),borderColor:'#c9a24a',borderWidth:2,tension:0,pointRadius:rollPts===1?3:0,pointBackgroundColor:'#c9a24a',pointHoverRadius:4,spanGaps:false,order:1});
     ds.push({$k:'dots',data:x.dots,showLine:false,pointRadius:3.5,pointHoverRadius:5,pointBackgroundColor:'rgba(147,169,156,.75)',pointBorderColor:'transparent',order:2});
     const vals=[...x.dots,...x.roll.map(r=>r?r.v:null)].filter(q=>q!=null);
-    if(band)x.roll.forEach(r=>{if(r&&r.se!=null)vals.push(r.v+r.se,r.v-r.se);});
+    if(band)hiD.forEach((q,i)=>{if(q!=null)vals.push(q,loD[i]);});
     if(bv!=null)vals.push(bv);
     const ysc={grid:{color:GRID},border:{display:false}};
     if(m.key==='ou18'||m.key==='prox150'){if(vals.length){const lo=Math.min(...vals),hi=Math.max(...vals),pad=Math.max(1,(hi-lo)*0.1);ysc.suggestedMin=lo-pad;ysc.suggestedMax=hi+pad;}}
@@ -1435,12 +1436,12 @@ function renderTrendSel(){
   const tiles=document.getElementById('trTiles');
   if(hasWin&&v.state!=='early'){
     const sub=v.state==='improving'||v.state==='slipping'?'more than the noise':v.state==='noise'?'inside the noise':`under ${m.dfmt(m.minEff).replace('+','')}, called steady`;
-    tiles.innerHTML=trTile(m.fmt(v.before),'before',`${t.Pw} rounds · ${v.nP} ${m.unitW}`)+trTile(m.fmt(v.now),'recent',`${t.Rw} rounds · ${v.nR} ${m.unitW}`)+trTile(m.dfmt(v.delta),'change',sub,v.state==='improving'?'good':v.state==='slipping'?'leak':'');
+    tiles.innerHTML=trTile(m.fmt(v.before),'before',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(m.fmt(v.now),'recent',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile(m.dfmt(v.delta),'change',sub,v.state==='improving'?'good':v.state==='slipping'?'leak':'');
   } else if(hasWin){
     const need=[v.needP?`${v.needP} more earlier ${tUnit(v.needP,m.unitW)}`:'',v.needR?`${v.needR} more recent ${tUnit(v.needR,m.unitW)}`:''].filter(Boolean).join(', ');
-    tiles.innerHTML=trTile(v.before!=null&&v.nP>=m.dotMin?m.fmt(v.before):'–','before',`${t.Pw} rounds · ${v.nP} ${m.unitW}`)+trTile(v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–','recent',`${t.Rw} rounds · ${v.nR} ${m.unitW}`)+trTile('–','change',`needs ${need}`);
+    tiles.innerHTML=trTile(v.before!=null&&v.nP>=m.dotMin?m.fmt(v.before):'–','before',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–','recent',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile('–','change',`needs ${need}`);
   } else {
-    tiles.innerHTML=trTile(x.allN>=m.dotMin?m.fmt(x.allV):'–','in view',`${N} round${N===1?'':'s'} · ${x.allN} ${m.unitW}`)+trTile(N,'rounds',`a trend needs ${TREND_MIN_ROUNDS}`)+trTile('–','change','no windows yet');
+    tiles.innerHTML=trTile(x.allN>=m.dotMin?m.fmt(x.allV):'–','in view',`${N} round${N===1?'':'s'} · ${x.allN} ${tUnit(x.allN,m.unitW)}`)+trTile(N,'rounds',`a trend needs ${TREND_MIN_ROUNDS}`)+trTile('–','change','no windows yet');
   }
   // what a call would take, for the selected metric
   const pw=document.getElementById('trPower');
