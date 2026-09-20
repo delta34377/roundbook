@@ -1,6 +1,8 @@
 import json
 data = json.load(open("dash_data.json"))
-data['hcp']=13.7
+import os
+_env_hcp=os.environ.get('ROUNDBOOK_HCP')
+data['hcp']=float(_env_hcp) if _env_hcp else data['cat']['overall']  # Arccos's handicap; the secret/env var overrides
 
 CSS = """
 :root{

@@ -795,7 +795,7 @@ function buildCourseSelect(){
 
 export function initRoundBook(rootEl, data){
   root=rootEl; D=data;
-  if(D.hcp==null)D.hcp=13.7; // CLAUDE.md rule 6; the sync/seed inject the real value
+  if(D.hcp==null)D.hcp=D.cat.overall; // CLAUDE.md rule 6; the sync/seed inject it, Arccos's handicap by default
   sortedDates=[...new Set(D.rounds.map(r=>r.date))].sort();
   state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
   frT=50; lastN=null; drvMin=150; selClub=0; gapThresh=18; openRound=null; benchHcp=null; trSel='ou18'; trModel=null;

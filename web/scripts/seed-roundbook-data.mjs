@@ -3,7 +3,7 @@
 // arccos-sync schedule.
 //
 // Seeds:
-//   roundbook_data        <- dash_data.json (+ hcp, default 13.7)
+//   roundbook_data        <- dash_data.json (+ hcp = Arccos's handicap, cat.overall)
 //   roundbook_raw_rounds  <- arccos-data-full.json IF it exists locally
 //                            (gitignored; seeding it means the first sync
 //                            only fetches genuinely new rounds)
@@ -12,7 +12,7 @@
 //   cd web && npm install && cd ..
 //   SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_KEY=<service_role> \
 //     node web/scripts/seed-roundbook-data.mjs
-//   (ROUNDBOOK_HCP overrides the 13.7 default)
+//   (ROUNDBOOK_HCP overrides it)
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,7 @@ const supabase = createClient(url, serviceKey);
 async function main() {
   const payload = JSON.parse(fs.readFileSync(path.join(root, 'dash_data.json'), 'utf8'));
   const envHcp = Number(process.env.ROUNDBOOK_HCP);
-  payload.hcp = Number.isFinite(envHcp) && envHcp > 0 ? envHcp : 13.7;
+  payload.hcp = Number.isFinite(envHcp) && envHcp > 0 ? envHcp : payload.cat.overall;
 
   const { error } = await supabase.from('roundbook_data').upsert({
     id: 1,

@@ -87,7 +87,7 @@ curl -X POST https://<PROJECT_REF>.supabase.co/functions/v1/arccos-sync \
 
 Expect JSON with rounds/holes counts and the through-date. `{"full": true}`
 refetches all geometry if the cache is ever suspect. Optional secret
-`ROUNDBOOK_HCP` overrides the handicap used by the dashboard (default 13.7).
+`ROUNDBOOK_HCP` overrides the handicap used by the dashboard (by default it is the handicap Arccos reports for the account, refreshed on every sync).
 
 The site's **Sync button** (top right after login) triggers the same function
 with your login session token; the function accepts it only when the token's

@@ -4,9 +4,9 @@
 // and upserts it into public.roundbook_data for /roundbook to read.
 //
 // Secrets (supabase secrets set ...): ARCCOS_EMAIL, ARCCOS_PASSWORD, and
-// optionally ROUNDBOOK_HCP (defaults to the previous payload's hcp, then 13.7 —
-// CLAUDE.md rule 6: the dashboard uses Mark's real index, never
-// Arccos's internal userHcp).
+// optionally ROUNDBOOK_HCP (a manual override; by default the dashboard uses
+// the handicap Arccos reports, cat.overall from /handicaps/latest, so it
+// tracks the account after every sync - CLAUDE.md rule 6).
 //
 // Auth: callable with the sync key as the bearer (the pg_cron schedule in
 // supabase/schema.sql sends it from Vault; set the same value as the SYNC_KEY
@@ -215,14 +215,10 @@ Deno.serve(async (req) => {
       return json(500, { error: 'derivation produced zero rounds; refusing to overwrite' });
     }
 
-    // hcp: explicit secret > previous payload > 13.7 (rule 6; never Arccos userHcp)
-    const prev = await supabase.from('roundbook_data').select('data').eq('id', 1).maybeSingle();
+    // hcp: Arccos's current handicap (cat.overall, from /handicaps/latest) so it
+    // tracks the account after every sync; ROUNDBOOK_HCP is a manual override only.
     const envHcp = Number(Deno.env.get('ROUNDBOOK_HCP'));
-    payload.hcp = Number.isFinite(envHcp) && envHcp > 0
-      ? envHcp
-      : typeof prev.data?.data?.hcp === 'number'
-        ? prev.data.data.hcp
-        : 13.7;
+    payload.hcp = Number.isFinite(envHcp) && envHcp > 0 ? envHcp : payload.cat.overall;
 
     const { error: upErr } = await supabase.from('roundbook_data').upsert({
       id: 1,
