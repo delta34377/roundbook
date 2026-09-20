@@ -61,7 +61,7 @@ The pipeline is verified end-to-end: prep_data.py regenerates the shipped dash_d
 3. Honest caveats stay in: small sample; Arccos Air has no lie, sand, or strokes-gained data in the export (verified field-by-field, do not pretend otherwise); Air has no putter sensor so fringe strokes may be logged as putts (the Putting tab has a sensitivity toggle, state var frT, thresholds 40/50/60 ft).
 4. Build + node --check after every change. For web/ changes: npm run build in web/ and re-run the parity script if derive.ts moved. Fix before presenting.
 5. Copy style for anything user-facing: plain, direct, no em dashes, no hollow praise, no AI-sounding filler.
-6. Handicap is 13.7 (injected as data['hcp'] in build_dash.py; the seed script and sync function inject it server-side, ROUNDBOOK_HCP secret overrides). Ignore Arccos's internal userHcp (14.9). The cat{} block is Arccos's own category handicaps, display-only.
+6. Handicap (data['hcp']) is Arccos's current handicap, cat.overall from /users/{uid}/handicaps/latest, so it tracks the account after every sync (Mark's call, Sep 2026; it was a fixed 13.7 index before, and Arccos's number was 14.9 at the time). build_dash.py, the seed script and the sync all take it from cat.overall; the ROUNDBOOK_HCP secret / env var is a manual override only. The engine's fallback is D.cat.overall too. The rest of cat{} is Arccos's category handicaps, display-only.
 7. When in doubt about a number, verify against the raw export rather than asserting. If two derivations disagree, find out why before shipping either.
 
 ## Data conventions (all verified)
