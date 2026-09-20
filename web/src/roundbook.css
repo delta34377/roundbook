@@ -221,6 +221,38 @@
 .rb-scope .bench-summary{font-size:12.5px;color:var(--muted);margin:15px 0 0;line-height:1.6}
 @media(max-width:680px){.rb-scope .bench-head{grid-template-columns:108px 42px 1fr 42px}.rb-scope .bench-row{grid-template-columns:108px 42px 1fr 42px}.rb-scope .bench-badge{display:none}.rb-scope .bench-name{font-size:12px}}
 
+/* Trends tab: metric chips with a third line, hero chart, window tiles, ranked
+   .rb-scope rows. Mirrored from build_dash.py's CSS - keep in step. */
+.rb-scope .tr-chip{flex:1 1 104px;min-width:104px}
+.rb-scope .tr-chip .cn{margin:0 0 4px}
+.rb-scope .tr-chip .ct{font-size:11px;margin-top:4px;color:var(--muted)}
+.rb-scope .tr-chip .ct.up{color:var(--fairway-b)}
+.rb-scope .tr-chip .ct.down{color:var(--flag)}
+.rb-scope .tr-chip .ct.dim{color:var(--muted2)}
+.rb-scope .tr-hero{height:260px}
+.rb-scope .tr-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;margin:0;font-size:13px;color:var(--muted2)}
+.rb-scope .tr-tiles{grid-template-columns:repeat(3,1fr)}
+.rb-scope .kpi.good{border-color:rgba(98,198,146,.4);background:linear-gradient(180deg,rgba(98,198,146,.1),var(--panel))}
+.rb-scope .kpi.good .val{color:var(--fairway-b)}
+.rb-scope .lvh-tag.early{background:var(--panel2);color:var(--muted2)}
+.rb-scope .tr-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 6px;margin:0 -6px;border-top:1px solid var(--line);cursor:pointer;border-radius:6px}
+.rb-scope .tr-row:hover{background:rgba(255,255,255,.03)}
+.rb-scope .tr-row.on{background:rgba(201,162,74,.08)}
+.rb-scope .tr-row .tr-name{font-size:13px;color:var(--muted)}
+.rb-scope .tr-row .tr-num{margin-left:auto;text-align:right}
+.rb-scope .tr-row .tr-num b{font-size:15px;color:var(--ink)}
+.rb-scope .tr-row .tr-num span{color:var(--muted2);font-size:11px}
+@media(max-width:480px){
+  .rb-scope #trChips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+  .rb-scope #trChips::-webkit-scrollbar{display:none}
+  .rb-scope .tr-chip{flex:0 0 auto;min-width:118px;max-width:150px}
+  .rb-scope .tr-hero{height:230px}
+  .rb-scope .tr-tiles{grid-template-columns:repeat(3,1fr)}
+  .rb-scope .tr-tiles .val{font-size:19px}
+  .rb-scope .tr-row{flex-wrap:wrap}
+  .rb-scope .tr-row .tr-num{margin-left:0;text-align:left;width:100%}
+}
+
 /* Chrome added by the React shell (RoundBook.js), not part of the original page. */
 .rb-page{background:#0e1a14;min-height:100vh}
 .rb-topbar{max-width:1120px;margin:0 auto;padding:14px 20px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}
