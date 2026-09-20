@@ -63,9 +63,10 @@ export function dedupeDates(ds){const cnt={};ds.forEach(d=>cnt[d]=(cnt[d]||0)+1)
 // Method parameters, not claims about the game: TREND_Z is the normal cut for a
 // two-sided 90% call, gate is the holes (or chances) a block needs before a
 // verdict, minEff the smallest change worth calling, dotMin/rollMin the units a
-// plotted point needs. Windows pool holes, so an 18 counts twice a nine and a
-// short round cannot swing a point. Nothing here fits a line through rounds.
-const TREND_Z=1.64,TREND_MIN_ROUNDS=4,TREND_PRIOR_MAX=10,TREND_ROLL=3;
+// plotted point needs. The rounds in view split in half, newer vs older, pooled
+// by hole so an 18 counts twice a nine and a short round cannot swing a point.
+// Nothing here fits a line through rounds.
+const TREND_Z=1.64,TREND_MIN_ROUNDS=4,TREND_ROLL=3;
 const tSgn=(v,d)=>{const s=v.toFixed(d),n=+s;return (n>=0?'+':'')+(n===0?(0).toFixed(d):s);};
 const tPts=v=>Math.abs(Math.round(v))===1?' pt':' pts';
 const TREND=[
@@ -102,10 +103,10 @@ function trendVerdict(m,P,R){
   else out.state='noise';
   return out;
 }
-function trendModel(rounds,trW,hcp){
+function trendModel(rounds,hcp){
   const rs=[...rounds].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.id-b.id);const N=rs.length;
-  const t={N,rs,trW,metrics:[],mix:null};
-  if(N>=TREND_MIN_ROUNDS){t.Rw=Math.min(trW,Math.floor(N/2));t.Pw=Math.min(TREND_PRIOR_MAX,N-t.Rw);t.recent=rs.slice(N-t.Rw);t.prior=rs.slice(N-t.Rw-t.Pw,N-t.Rw);t.hR=tHoles(t.recent).length;t.hP=tHoles(t.prior).length;}
+  const t={N,rs,metrics:[],mix:null};
+  if(N>=TREND_MIN_ROUNDS){t.Rw=Math.floor(N/2);t.Pw=N-t.Rw;t.recent=rs.slice(N-t.Rw);t.prior=rs.slice(N-t.Rw-t.Pw,N-t.Rw);t.hR=tHoles(t.recent).length;t.hP=tHoles(t.prior).length;}
   const allH=tHoles(rs);t.parPer18=allH.length?tMean(allH.map(h=>h.par))*18:null;
   const PH=t.prior?tHoles(t.prior):null,RH=t.recent?tHoles(t.recent):null;
   TREND.forEach(m=>{
@@ -126,22 +127,22 @@ function trendModel(rounds,trW,hcp){
     if(best&&Math.abs(best.d)>=0.30)t.mix=best;}
   return t;
 }
-// Virtual nine-hole rounds appended until windows exist and both scoring blocks clear the gate (copy only).
-function trendRoundsNeeded(rs,trW){
+// Virtual nine-hole rounds appended until both halves clear the scoring gate (copy only).
+function trendRoundsNeeded(rs){
   const hc=rs.map(r=>r.holes.length),sum=a=>a.reduce((s,x)=>s+x,0);
   for(let k=0;k<=20;k++){const h=hc.concat(Array(k).fill(9)),N=h.length;if(N<TREND_MIN_ROUNDS)continue;
-    const Rw=Math.min(trW,Math.floor(N/2)),Pw=Math.min(TREND_PRIOR_MAX,N-Rw);
-    if(sum(h.slice(N-Rw))>=TREND[0].gate&&sum(h.slice(N-Rw-Pw,N-Rw))>=TREND[0].gate)return k;}
+    const Rw=Math.floor(N/2);
+    if(sum(h.slice(N-Rw))>=TREND[0].gate&&sum(h.slice(0,N-Rw))>=TREND[0].gate)return k;}
   return 21;
 }
 function trendHeadline(t){
-  const {N,Rw,Pw}=t,gate=TREND[0].gate;const nine=k=>`${k} more nine-hole round${k===1?'':'s'}`;
+  const {N}=t,gate=TREND[0].gate;const nine=k=>`${k} more nine-hole round${k===1?'':'s'}`;
   if(N===0)return['No rounds in this filter.','Widen the date range or pick another course.'];
-  const k=trendRoundsNeeded(t.rs,t.trW);const kTxt=k>20?'More than 20 more nine-hole rounds':`About ${nine(k)}`;
-  if(N<TREND_MIN_ROUNDS)return[`${N} round${N===1?'':'s'} in view. A trend needs at least ${TREND_MIN_ROUNDS}.`,`The chart below shows each round on its own. A call compares the last few rounds with the ones before them and needs ${gate} holes on each side. ${kTxt} gets there (fewer if you play 18).`];
+  const k=trendRoundsNeeded(t.rs);const kTxt=k>20?'More than 20 more nine-hole rounds':`About ${nine(k)}`;
+  if(N<TREND_MIN_ROUNDS)return[`${N} round${N===1?'':'s'} in view. A trend needs at least ${TREND_MIN_ROUNDS}.`,`The chart shows each round on its own. A call splits the rounds in view in half, newer against older, and needs ${gate} holes on each side. ${kTxt} gets there (fewer if you play 18).`];
   const ou=t.metrics.find(x=>x.m.key==='ou18'),V=ou.v;
-  const mixTxt=t.mix?` The last ${Rw} rounds are ${Math.round(t.mix.r*100)}% ${t.mix.c} against ${Math.round(t.mix.p*100)}% before, so part of any change may be the course, not you.`:'';
-  if(V.state==='early')return[`Too early to call a trend: ${N} rounds, ${t.hR} holes in the last ${Rw} and ${t.hP} before.`,`A call needs ${gate} holes on each side. ${kTxt} gets there (fewer if you play 18). Meanwhile the chart shows every round and the rolling ${TREND_ROLL}-round line.`];
+  const mixTxt=t.mix?` The newer half is ${Math.round(t.mix.r*100)}% ${t.mix.c} against ${Math.round(t.mix.p*100)}% in the older half, so part of any change may be the course, not you.`:'';
+  if(V.state==='early')return[`Too early to call a trend: ${N} rounds in view, ${t.hR} holes in the newer half and ${t.hP} in the older.`,`A call needs ${gate} holes on each side. ${kTxt} gets there (fewer if you play 18), or widen the filter. Meanwhile the chart shows every round and the rolling ${TREND_ROLL}-round line.`];
   const scored=t.metrics.filter(x=>x.v.state!=='early');
   const clear=scored.filter(x=>x.v.state==='improving'||x.v.state==='slipping').sort((a,b)=>Math.abs(b.v.z)-Math.abs(a.v.z));
   const imp=clear.filter(x=>x.v.state==='improving'),slp=clear.filter(x=>x.v.state==='slipping');
@@ -149,21 +150,21 @@ function trendHeadline(t){
   const ouTxt=V.state==='steady'?`Over par per 18 is steady: ${ou.m.fmt(V.now)} against ${ou.m.fmt(V.before)} before.`:V.state==='noise'?`Over par per 18 went ${ou.m.fmt(V.before)} to ${ou.m.fmt(V.now)}, inside the noise.`:`Over par per 18 ${V.state==='improving'?'came down':'went up'} from ${ou.m.fmt(V.before)} to ${ou.m.fmt(V.now)}, more than the noise.`;
   if(!clear.length){
     const mover=scored.filter(x=>x.v.state==='noise').sort((a,b)=>Math.abs(b.v.z)-Math.abs(a.v.z))[0];
-    if(mover)return[`Nothing has clearly changed over the last ${Rw} rounds.`,`Biggest move is ${fm(mover)}, ${mover.v.good?'better':'worse'} by ${mover.m.dfmt(Math.abs(mover.v.delta)).replace('+','')}, but ${mover.v.nR} ${mover.m.unitW} is not enough to separate that from noise. ${ouTxt}${mixTxt}`];
+    if(mover)return[`Nothing has clearly changed across the ${N} rounds in view.`,`Biggest move is ${fm(mover)}, ${mover.v.good?'better':'worse'} by ${mover.m.dfmt(Math.abs(mover.v.delta)).replace('+','')}, but ${mover.v.nR} ${mover.m.unitW} is not enough to separate that from noise. ${ouTxt}${mixTxt}`];
     const g=t.metrics.find(x=>x.m.key==='gir'),p=t.metrics.find(x=>x.m.key==='tp');
-    return[`Steady across the board over the last ${Rw} rounds.`,`Every metric with enough holes sits within its practical band of the ${Pw} rounds before. ${ouTxt}${g.v.state!=='early'?` Greens ${g.m.fmt(g.v.now)} against ${g.m.fmt(g.v.before)}.`:''}${p.v.state!=='early'?` Three-putts ${p.m.fmt(p.v.now)} against ${p.m.fmt(p.v.before)}.`:''}${mixTxt}`];
+    return[`Steady across the board over the ${N} rounds in view.`,`Every metric with enough holes sits within its practical band of the older half. ${ouTxt}${g.v.state!=='early'?` Greens ${g.m.fmt(g.v.now)} against ${g.m.fmt(g.v.before)}.`:''}${p.v.state!=='early'?` Three-putts ${p.m.fmt(p.v.now)} against ${p.m.fmt(p.v.before)}.`:''}${mixTxt}`];
   }
   const strong=V.state==='improving'||V.state==='slipping'||imp.length>=2||slp.length>=2;
   if(!strong){
-    if(clear.length===1){const c=clear[0];return[`One clear change over the last ${Rw} rounds: ${c.m.sl} ${c.v.good?'improved':'slipped'}.`,`${c.m.label} went from ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}, more than the noise. Everything else is steady or inside noise. ${ouTxt} One clear mover out of ${TREND.length} is worth watching, not yet a conclusion.${mixTxt}`];}
-    return[`Two changes over the last ${Rw} rounds, pulling in different directions.`,`${fm(imp[0])} is better; ${fm(slp[0])} is worse. ${ouTxt} Two movers out of ${TREND.length} in opposite directions is worth watching, not yet a conclusion.${mixTxt}`];
+    if(clear.length===1){const c=clear[0];return[`One clear change across the ${N} rounds in view: ${c.m.sl} ${c.v.good?'improved':'slipped'}.`,`${c.m.label} went from ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}, more than the noise. Everything else is steady or inside noise. ${ouTxt} One clear mover out of ${TREND.length} is worth watching, not yet a conclusion.${mixTxt}`];}
+    return[`Two changes across the ${N} rounds in view, pulling in different directions.`,`${fm(imp[0])} is better; ${fm(slp[0])} is worse. ${ouTxt} Two movers out of ${TREND.length} in opposite directions is worth watching, not yet a conclusion.${mixTxt}`];
   }
   const names=a=>{const n=a.slice(0,3).map(x=>x.m.sl);return n.length>1?n.slice(0,-1).join(', ')+' and '+n[n.length-1]:n[0];};
   const lead=c=>`Lead change is ${c.m.label.toLowerCase()}: ${c.m.fmt(c.v.before)} to ${c.m.fmt(c.v.now)} on ${c.v.nP} then ${c.v.nR} ${c.m.unitW}.`;
-  if(imp.length&&!slp.length)return[`Improving: ${names(imp)} moved the right way over the last ${Rw} rounds.`,`${lead(imp[0])} ${ouTxt}${V.state!=='improving'?' The pieces are moving before the total does.':''}${mixTxt}`];
-  if(slp.length&&!imp.length)return[`Slipping: ${names(slp)} moved the wrong way over the last ${Rw} rounds.`,`${lead(slp[0])} ${ouTxt}${mixTxt}`];
+  if(imp.length&&!slp.length)return[`Improving: ${names(imp)} moved the right way over the ${N} rounds in view.`,`${lead(imp[0])} ${ouTxt}${V.state!=='improving'?' The pieces are moving before the total does.':''}${mixTxt}`];
+  if(slp.length&&!imp.length)return[`Slipping: ${names(slp)} moved the wrong way over the ${N} rounds in view.`,`${lead(slp[0])} ${ouTxt}${mixTxt}`];
   const rider=V.state==='slipping'?` Scoring went the other way from ${imp[0].m.sl}; check doubles and penalties before crediting it.`:'';
-  return[`Mixed over the last ${Rw} rounds: ${names(imp)} better; ${names(slp)} worse.`,`${ouTxt} The biggest move either way is ${fm(clear[0])}.${rider}${mixTxt}`];
+  return[`Mixed across the ${N} rounds in view: ${names(imp)} better; ${names(slp)} worse.`,`${ouTxt} The biggest move either way is ${fm(clear[0])}.${rider}${mixTxt}`];
 }
 // ---- end trends ----
-export { TREND, TREND_Z, TREND_MIN_ROUNDS, TREND_PRIOR_MAX, TREND_ROLL, tUnit, trendModel, trendHeadline, trendRoundsNeeded };
+export { TREND, TREND_Z, TREND_MIN_ROUNDS, TREND_ROLL, tUnit, trendModel, trendHeadline, trendRoundsNeeded };
