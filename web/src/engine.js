@@ -664,18 +664,18 @@ function renderTiger5(){
 
 // ---- Trends ----
 // Everything on this tab comes from trendModel() over filtered(); this layer
-// only builds DOM and the hero chart from the model. trW is the window toggle,
-// trSel the metric shown in the hero, tiles and power line.
-let trW, trSel, trModel;
+// only builds DOM and the hero chart from the model; the global filter decides
+// which rounds are in view. trSel is the metric shown in the hero, tiles and
+// power line.
+let trSel, trModel;
 function trTile(n,l,sub,cls){return `<div class="kpi ${cls||''}"><p class="lab">${l}</p><p class="val">${n}</p>${sub?`<p style="font-size:11px;color:var(--muted2);margin:5px 0 0">${sub}</p>`:''}</div>`;}
 function renderTrends(){
-  const t=trendModel(filtered(),trW,D.hcp);trModel=t;
+  const t=trendModel(filtered(),D.hcp);trModel=t;
   const N=t.N,hasWin=N>=TREND_MIN_ROUNDS;
   const [hd,sb]=trendHeadline(t);
   $('trHead').textContent=hd;$('trSub').textContent=sb;
-  root.querySelectorAll('[data-tw]').forEach(b=>b.classList.toggle('on',+b.dataset.tw===trW));
   const win=$('trWin');
-  if(hasWin){win.style.display='';win.textContent=`Last ${t.Rw} rounds (${t.hR} holes) vs the ${t.Pw} before (${t.hP} holes)${t.Rw<trW?`, clamped to half the ${N} rounds in view`:''}.`;}
+  if(hasWin){win.style.display='';win.textContent=`Newer half: the last ${t.Rw} rounds (${t.hR} holes). Older half: the ${t.Pw} before them (${t.hP} holes). Change the course, date or last-rounds filter to move the window.`;}
   else win.style.display='none';
   // chips: value is the recent window's pooled value, else the whole view's
   const arrow=d=>d>0?'▲':'▼';
@@ -692,23 +692,23 @@ function renderTrends(){
   // what moved: ranked list, clear movers first
   const cap=$('trMovedCap'),list=$('trMoved');
   if(hasWin){
-    cap.textContent=`Every metric, last ${t.Rw} rounds vs the ${t.Pw} before, ranked by how clearly it moved.`;
+    cap.textContent=`Every metric, newer half vs older half of the ${N} rounds in view, ranked by how clearly it moved.`;
     const rank=x=>{const s=x.v.state;return s==='improving'||s==='slipping'?0:s==='noise'?1:s==='steady'?2:3;};
     const key=x=>{const v=x.v;return v.state==='steady'?Math.abs(v.delta)/x.m.minEff:v.state==='early'?0:Math.abs(v.z);};
     const rows=t.metrics.map((x,i)=>({x,i})).sort((a,b)=>rank(a.x)-rank(b.x)||(rank(a.x)===3?a.i-b.i:key(b.x)-key(a.x)));
     const TAG={improving:['win','Better'],slipping:['lose','Worse'],noise:['flat','Inside noise'],steady:['flat','Steady'],early:['early','Too few']};
     list.innerHTML=rows.map(({x})=>{const v=x.v,m=x.m,tg=TAG[v.state];
       const num=v.state==='early'
-        ?`<b>${v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–'}</b> <span>· needs ${[v.needP?`${v.needP} more earlier ${tUnit(v.needP,m.unitW)}`:'',v.needR?`${v.needR} more recent ${tUnit(v.needR,m.unitW)}`:''].filter(Boolean).join(', ')}</span>`
+        ?`<b>${v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–'}</b> <span>· needs ${[v.needP?`${v.needP} more older-half ${tUnit(v.needP,m.unitW)}`:'',v.needR?`${v.needR} more newer-half ${tUnit(v.needR,m.unitW)}`:''].filter(Boolean).join(', ')}</span>`
         :`<b>${m.fmt(v.before)} → ${m.fmt(v.now)}</b> <span>· ${v.nP} then ${v.nR} ${m.unitW}</span>`;
       return `<div class="tr-row" data-tm="${m.key}"><span class="tr-name">${m.label}</span><span class="tr-num">${num}</span><span class="lvh-tag ${tg[0]}">${tg[1]}</span></div>`;}).join('');
     root.querySelectorAll('#trMoved .tr-row').forEach(el=>{el.onclick=()=>{trSel=el.dataset.tm;renderTrendSel();};});
   } else {
     cap.textContent='';
-    list.innerHTML=`<p class="note" style="margin:0">${N?`Windows appear at ${TREND_MIN_ROUNDS} rounds. The chips above show values across the ${N} round${N===1?'':'s'} in view.`:'No rounds in this filter.'}</p>`;
+    list.innerHTML=`<p class="note" style="margin:0">${N?`A comparison needs ${TREND_MIN_ROUNDS} rounds in view. The chips above show values across the ${N} round${N===1?'':'s'} in view.`:'No rounds in this filter.'}</p>`;
   }
   const cg=TREND.filter(m=>m.unitW!=='holes').map(m=>m.gate);
-  $('trNote').textContent=`Windows are pooled by hole, so an 18-hole round counts twice a nine and a short round cannot swing a point. Calls compare the last few rounds with the ones before them; nothing here fits a line through the rounds. A metric is called better or worse only when it moved more than its practical minimum and more than the noise in the holes on each side, with at least ${TREND[0].gate} holes (or ${Math.min(...cg)} to ${Math.max(...cg)} chances) a side; steady means it moved less than the minimum, not that nothing changed; inside noise means it moved but the sample cannot separate that from luck. Each metric is tested at a level that lets it fire about one time in ten by luck, and ${TREND.length} are tested at once, so an unchanged view will often show one false call; that is why a single mover gets a softer headline. Putts are as recorded: Arccos Air has no putter sensor, so fringe strokes may be logged as putts and three-putts are a ceiling (the Putting tab has the sensitivity toggle). No lie, sand or strokes-gained data exists in the export, so scrambling is score-based and inside-150 uses approach distance, not lie. Wedge proximity counts only shots started from 50 to 150 yards so a change in course mix cannot pose as wedge play. Benchmark lines are the handicap table interpolated at ${D.hcp}; penalties compare to it per 18 holes and over par uses the par of the holes in view. On the All filter a window can straddle courses; the course dropdown isolates one track.`;
+  $('trNote').textContent=`The rounds in view come from the course, date and last-rounds filters above. They split in half by play order, newer against older, pooled by hole, so an 18-hole round counts twice a nine and a short round cannot swing a point; nothing here fits a line through the rounds. A metric is called better or worse only when it moved more than its practical minimum and more than the noise in the holes on each side, with at least ${TREND[0].gate} holes (or ${Math.min(...cg)} to ${Math.max(...cg)} chances) a side; steady means it moved less than the minimum, not that nothing changed; inside noise means it moved but the sample cannot separate that from luck. Each metric is tested at a level that lets it fire about one time in ten by luck, and ${TREND.length} are tested at once, so an unchanged view will often show one false call; that is why a single mover gets a softer headline. Putts are as recorded: Arccos Air has no putter sensor, so fringe strokes may be logged as putts and three-putts are a ceiling (the Putting tab has the sensitivity toggle). No lie, sand or strokes-gained data exists in the export, so scrambling is score-based and inside-150 uses approach distance, not lie. Wedge proximity counts only shots started from 50 to 150 yards so a change in course mix cannot pose as wedge play. Benchmark lines are the handicap table interpolated at ${D.hcp}; penalties compare to it per 18 holes and over par uses the par of the holes in view. On the All filter a window can straddle courses; the course dropdown isolates one track.`;
   renderTrendSel();
 }
 function renderTrendSel(){
@@ -718,8 +718,8 @@ function renderTrendSel(){
   root.querySelectorAll('#trMoved .tr-row').forEach(el=>el.classList.toggle('on',el.dataset.tm===m.key));
   const isPct=m.kind==='rate'&&m.scale===100,band=m.kind!=='median',bv=x.benchV;
   $('trHeroTitle').textContent=`${m.label}, round by round`;
-  $('trHeroCap').textContent=`Dots are rounds with at least ${m.dotMin} ${m.unitW}. The line is the rolling ${TREND_ROLL}-round value pooled by hole`+(band?', shaded one standard error':' (no band: the median\'s spread is not well estimated at this size)')+(bv!=null?`. Dashed line: ~${m.fmt(bv)} for a ${D.hcp} handicap`+(m.key==='pen18'?', read as strokes per 18 holes':m.key==='ou18'?', converted with the par of the holes in view':''):'')+(hasWin?`. The shaded block is the last ${t.Rw} rounds.`:'.');
-  $('trLegend').innerHTML=[`<span><i style="background:rgba(147,169,156,.75)"></i>single round (at least ${m.dotMin} ${m.unitW})</span>`,`<span><i style="background:#c9a24a"></i>rolling ${TREND_ROLL} rounds, pooled by hole</span>`,band?`<span><i style="background:rgba(201,162,74,.3)"></i>one standard error</span>`:'',bv!=null?`<span><i style="background:#62c692"></i>~${m.fmt(bv)} for a ${D.hcp}</span>`:'',hasWin?`<span><i style="background:rgba(63,120,196,.35)"></i>last ${t.Rw} rounds</span>`:''].filter(Boolean).join('');
+  $('trHeroCap').textContent=`Dots are rounds with at least ${m.dotMin} ${m.unitW}. The line is the rolling ${TREND_ROLL}-round value pooled by hole`+(band?', shaded one standard error':' (no band: the median\'s spread is not well estimated at this size)')+(bv!=null?`. Dashed line: ~${m.fmt(bv)} for a ${D.hcp} handicap`+(m.key==='pen18'?', read as strokes per 18 holes':m.key==='ou18'?', converted with the par of the holes in view':''):'')+(hasWin?`. The shaded block is the newer half, the last ${t.Rw} rounds.`:'.');
+  $('trLegend').innerHTML=[`<span><i style="background:rgba(147,169,156,.75)"></i>single round (at least ${m.dotMin} ${m.unitW})</span>`,`<span><i style="background:#c9a24a"></i>rolling ${TREND_ROLL} rounds, pooled by hole</span>`,band?`<span><i style="background:rgba(201,162,74,.3)"></i>one standard error</span>`:'',bv!=null?`<span><i style="background:#62c692"></i>~${m.fmt(bv)} for a ${D.hcp}</span>`:'',hasWin?`<span><i style="background:rgba(63,120,196,.35)"></i>newer half (last ${t.Rw} rounds)</span>`:''].filter(Boolean).join('');
   const emp=$('trEmpty');
   if(!N){
     if(charts['trHero']){charts['trHero'].destroy();delete charts['trHero'];}
@@ -748,7 +748,7 @@ function renderTrendSel(){
     if(isPct)ysc.ticks={callback:q=>q+'%'};
     const Rw=t.Rw;
     const benchLine={id:'trBench',afterDatasetsDraw(ch){if(bv==null)return;const y=ch.scales.y,a=ch.chartArea,c=ch.ctx;const yy=y.getPixelForValue(bv);if(yy<a.top||yy>a.bottom)return;c.save();c.strokeStyle='rgba(98,198,146,.75)';c.setLineDash([5,4]);c.beginPath();c.moveTo(a.left,yy);c.lineTo(a.right,yy);c.stroke();c.setLineDash([]);c.fillStyle='#62c692';c.font='10px Inter';c.fillText(`~${m.fmt(bv)} for a ${D.hcp}`,a.left+4,yy-4);c.restore();}};
-    const recentBand={id:'trRecent',beforeDatasetsDraw(ch){if(!hasWin)return;const xs=ch.scales.x,a=ch.chartArea,c=ch.ctx;const step=N>1?Math.abs(xs.getPixelForValue(1)-xs.getPixelForValue(0)):(a.right-a.left);const x0=Math.max(a.left,xs.getPixelForValue(N-Rw)-step/2);c.save();c.fillStyle='rgba(63,120,196,.10)';c.fillRect(x0,a.top,a.right-x0,a.bottom-a.top);c.fillStyle='#3f78c4';c.font='10px Inter';c.fillText(`last ${Rw}`,x0+4,a.top+10);c.restore();}};
+    const recentBand={id:'trRecent',beforeDatasetsDraw(ch){if(!hasWin)return;const xs=ch.scales.x,a=ch.chartArea,c=ch.ctx;const step=N>1?Math.abs(xs.getPixelForValue(1)-xs.getPixelForValue(0)):(a.right-a.left);const x0=Math.max(a.left,xs.getPixelForValue(N-Rw)-step/2);c.save();c.fillStyle='rgba(63,120,196,.10)';c.fillRect(x0,a.top,a.right-x0,a.bottom-a.top);c.fillStyle='#3f78c4';c.font='10px Inter';c.fillText(`newer ${Rw}`,x0+4,a.top+10);c.restore();}};
     draw('trHero',{type:'line',data:{labels,datasets:ds},plugins:[recentBand,benchLine],
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{filter:it=>it.dataset.$k==='roll'||it.dataset.$k==='dots',callbacks:{label:c=>{const i=c.dataIndex;if(c.dataset.$k==='roll'){const r=x.roll[i];return `rolling ${TREND_ROLL} rounds: ${m.fmt(r.v)} on ${r.n} ${m.unitW}`;}return `${m.fmt(c.parsed.y)} on ${x.dotN[i]} ${m.unitW}`;}}}},
@@ -758,19 +758,19 @@ function renderTrendSel(){
   const tiles=$('trTiles');
   if(hasWin&&v.state!=='early'){
     const sub=v.state==='improving'||v.state==='slipping'?'more than the noise':v.state==='noise'?'inside the noise':`under ${m.dfmt(m.minEff).replace('+','')}, called steady`;
-    tiles.innerHTML=trTile(m.fmt(v.before),'before',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(m.fmt(v.now),'recent',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile(m.dfmt(v.delta),'change',sub,v.state==='improving'?'good':v.state==='slipping'?'leak':'');
+    tiles.innerHTML=trTile(m.fmt(v.before),'older half',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(m.fmt(v.now),'newer half',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile(m.dfmt(v.delta),'change',sub,v.state==='improving'?'good':v.state==='slipping'?'leak':'');
   } else if(hasWin){
-    const need=[v.needP?`${v.needP} more earlier ${tUnit(v.needP,m.unitW)}`:'',v.needR?`${v.needR} more recent ${tUnit(v.needR,m.unitW)}`:''].filter(Boolean).join(', ');
-    tiles.innerHTML=trTile(v.before!=null&&v.nP>=m.dotMin?m.fmt(v.before):'–','before',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–','recent',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile('–','change',`needs ${need}`);
+    const need=[v.needP?`${v.needP} more older-half ${tUnit(v.needP,m.unitW)}`:'',v.needR?`${v.needR} more newer-half ${tUnit(v.needR,m.unitW)}`:''].filter(Boolean).join(', ');
+    tiles.innerHTML=trTile(v.before!=null&&v.nP>=m.dotMin?m.fmt(v.before):'–','older half',`${t.Pw} rounds · ${v.nP} ${tUnit(v.nP,m.unitW)}`)+trTile(v.now!=null&&v.nR>=m.dotMin?m.fmt(v.now):'–','newer half',`${t.Rw} rounds · ${v.nR} ${tUnit(v.nR,m.unitW)}`)+trTile('–','change',`needs ${need}`);
   } else {
-    tiles.innerHTML=trTile(x.allN>=m.dotMin?m.fmt(x.allV):'–','in view',`${N} round${N===1?'':'s'} · ${x.allN} ${tUnit(x.allN,m.unitW)}`)+trTile(N,'rounds',`a trend needs ${TREND_MIN_ROUNDS}`)+trTile('–','change','no windows yet');
+    tiles.innerHTML=trTile(x.allN>=m.dotMin?m.fmt(x.allV):'–','in view',`${N} round${N===1?'':'s'} · ${x.allN} ${tUnit(x.allN,m.unitW)}`)+trTile(N,'rounds in view',`a comparison needs ${TREND_MIN_ROUNDS}`)+trTile('–','change','widen the filter');
   }
   // what a call would take, for the selected metric
   const pw=$('trPower');
   if(hasWin){
     const eff=m.dfmt(m.minEff).replace('+',''),lab=m.sl;
     if(x.need==null)pw.textContent=`Not enough spread in ${lab} yet to size what a call would take.`;
-    else pw.textContent=`To call a change of ${eff} in ${lab} at your current spread takes ${x.need>1000?'more than 1000':'about '+x.need} ${m.unitW} on each side. You have ${v.nR} recent and ${v.nP} before`+(v.state==='early'?`; a call also needs ${m.gate} on each side.`:'.');
+    else pw.textContent=`To call a change of ${eff} in ${lab} at your current spread takes ${x.need>1000?'more than 1000':'about '+x.need} ${m.unitW} on each side. You have ${v.nR} in the newer half and ${v.nP} in the older`+(v.state==='early'?`; a call also needs ${m.gate} on each side.`:'.');
   } else pw.textContent='';
 }
 
@@ -798,7 +798,7 @@ export function initRoundBook(rootEl, data){
   if(D.hcp==null)D.hcp=13.7; // CLAUDE.md rule 6; the sync/seed inject the real value
   sortedDates=[...new Set(D.rounds.map(r=>r.date))].sort();
   state={course:'All',fromIdx:0,toIdx:sortedDates.length-1};
-  frT=50; lastN=null; drvMin=150; selClub=0; gapThresh=18; openRound=null; benchHcp=null; trW=5; trSel='ou18'; trModel=null;
+  frT=50; lastN=null; drvMin=150; selClub=0; gapThresh=18; openRound=null; benchHcp=null; trSel='ou18'; trModel=null;
   buildCourseSelect();
   // tabs
   root.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -840,7 +840,6 @@ export function initRoundBook(rootEl, data){
   const bs=$('benchSlider');bs.value=D.hcp;
   root.querySelector('[data-bh="self"]').textContent='My handicap · '+D.hcp;
   root.querySelectorAll('[data-fr]').forEach(b=>b.onclick=()=>{frT=+b.dataset.fr;renderPutting();});
-  root.querySelectorAll('[data-tw]').forEach(b=>b.onclick=()=>{trW=+b.dataset.tw;renderTrends();});
   bs.oninput=()=>{benchHcp=+bs.value;root.querySelectorAll('[data-bh]').forEach(x=>x.classList.remove('on'));renderBench();};
   $('fromV').textContent=fmtDate(sortedDates[0]);
   $('toV').textContent=fmtDate(sortedDates[sortedDates.length-1]);

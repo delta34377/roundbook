@@ -98,13 +98,14 @@ secret key ever reaches the browser and nobody else can trigger it.
 
 - **Sync button** (top right): pulls the latest rounds from Arccos on demand;
   the nightly schedule is the backstop.
-- **Trends tab**: compares the last 3, 5 or 10 rounds with the rounds before
-  them, pooled by hole, across nine metrics (scoring, greens, bogeys inside
-  150, wedge proximity, three-putts, scrambling, doubles, penalties,
-  fairways). A metric is called better or worse only when it moved more than
-  its practical minimum and more than the noise, with at least 27 holes a
-  side; under 4 rounds it only plots. Tap a chip or row to put that metric
-  in the chart.
+- **Trends tab**: charts whatever rounds the filters select (last 5/10/20,
+  a date range, a course) and compares the newer half with the older half,
+  pooled by hole, across nine metrics (scoring, greens, bogeys inside 150,
+  wedge proximity, three-putts, scrambling, doubles, penalties, fairways).
+  A metric is called better or worse only when it moved more than its
+  practical minimum and more than the noise, with at least 27 holes a side;
+  under 4 rounds it only plots. Tap a chip or row to put that metric in the
+  chart.
 - **The link remembers your view**: the tab and course filter live in the URL
   (e.g. `#tab=tiger5&course=Birchwood%20CC`), so bookmarks and reopened tabs
   land where you left off.
