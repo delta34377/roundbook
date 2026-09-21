@@ -117,3 +117,10 @@ export function fetchHandicap(uid: string, token: string): Promise<any> {
 export function fetchProfile(uid: string, token: string): Promise<any> {
   return call('profile', 'GET', `${API}/users/${uid}`, token);
 }
+
+// Optional GET used only to look for the official index: returns the body, or
+// a {_status, _error} stub on any failure, so a probe can never fail a sync.
+export async function fetchOptional(step: string, path: string, token: string): Promise<any> {
+  try { return await call(step, 'GET', `${API}${path}`, token); }
+  catch (e) { return { _status: e instanceof ArccosError ? e.status : null, _error: String(e?.message ?? e).slice(0, 80) }; }
+}
