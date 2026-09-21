@@ -169,9 +169,14 @@ async function loadDashboard(supabase) {
     ? ` · handicap ${data.data.hcp}${data.data.hcpSource ? ' (' + data.data.hcpSource + ')' : ''}`
     : ''
   document.getElementById('rb-updated').textContent = updated + hcpNote
-  document.getElementById('rb-updated').title = Array.isArray(data.data?.hcpCandidates) && data.data.hcpCandidates.length
-    ? 'Index fields seen in Arccos: ' + data.data.hcpCandidates.join(', ')
-    : 'No USGA index field found in the Arccos profile or handicap responses'
+  const cands = Array.isArray(data.data?.hcpCandidates) ? data.data.hcpCandidates : []
+  document.getElementById('rb-updated').title = cands.length ? 'Index search: ' + cands.join(' | ') : ''
+  if (/no USGA index/.test(String(data.data?.hcpSource || '')) && cands.length) {
+    const d = document.createElement('div')
+    d.className = 'rb-diag'
+    d.textContent = 'Index search (no USGA index found yet): ' + cands.join(' | ')
+    document.querySelector('.rb-topbar').insertAdjacentElement('afterend', d)
+  }
   wireTopbar(supabase)
   const host = document.getElementById('rb-host')
   host.innerHTML = RB_BODY_HTML

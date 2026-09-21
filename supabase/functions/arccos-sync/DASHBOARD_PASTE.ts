@@ -127,6 +127,13 @@ function fetchProfile(uid: string, token: string): Promise<any> {
   return call('profile', 'GET', `${API}/users/${uid}`, token);
 }
 
+// Optional GET used only to look for the official index: returns the body, or
+// a {_status, _error} stub on any failure, so a probe can never fail a sync.
+async function fetchOptional(step: string, path: string, token: string): Promise<any> {
+  try { return await call(step, 'GET', `${API}${path}`, token); }
+  catch (e) { return { _status: e instanceof ArccosError ? e.status : null, _error: String(e?.message ?? e).slice(0, 80) }; }
+}
+
 // ===================== derive.ts =====================
 // derive.ts — TypeScript port of prep_data.py (the reference).
 // Turns a raw Arccos export shape into the dashboard payload. Dependency-free
@@ -690,7 +697,14 @@ Deno.serve(async (req) => {
     // Profile failures are not fatal; the handicap object is already verified.
     let profile: any = null;
     try { profile = await fetchProfile(uid, token); } catch (e) { console.warn('profile fetch failed:', String(e)); }
-    const indexHit = findOfficialIndex({ profile, handicap });
+    // Endpoints the app might use for the official index; each is optional.
+    const extra: Record<string, any> = {};
+    for (const [name, path] of Object.entries({
+      settings: `/users/${uid}/settings`, ghin: `/users/${uid}/ghin`, handicapIndex: `/users/${uid}/handicapIndex`,
+      summary: `/users/${uid}/summary`, stats: `/users/${uid}/stats`, v2user: `/v2/users/${uid}`, latestHcps: `/users/${uid}/handicaps?rounds=1`,
+    })) extra[name] = await fetchOptional(name, path, token);
+    const indexRoots = { profile, handicap, ...extra };
+    const indexHit = findOfficialIndex(indexRoots);
 
     // --- derive with the verified prep_data.py math ---
     const payload = deriveDashData({
@@ -714,7 +728,7 @@ Deno.serve(async (req) => {
     } else {
       payload.hcp = payload.cat.overall; payload.hcpSource = 'Arccos handicap (userHcp); no USGA index field found';
     }
-    payload.hcpCandidates = indexHit ? indexHit.candidates : listIndexCandidates({ profile, handicap });
+    payload.hcpCandidates = indexHit ? indexHit.candidates : describeIndexSearch(indexRoots);
 
     const { error: upErr } = await supabase.from('roundbook_data').upsert({
       id: 1,
@@ -745,32 +759,52 @@ Deno.serve(async (req) => {
 });
 
 // ---- official index discovery ----
-// Walks the given objects (depth-first, lists capped) and returns every numeric
-// leaf in handicap range (-10..54) whose key mentions ghin, usga or index, as
-// "root.path=value" strings. Nothing else from the profile is kept.
-function listIndexCandidates(roots: Record<string, any>): string[] {
-  const out: string[] = [];
+// Arccos's own six category handicaps and any goal/target field are never the
+// official index; everything else numeric in handicap range with a
+// handicap-ish key is a candidate, ghin/usga keys first.
+const ARCCOS_OWN = new Set(['userHcp', 'driveHcp', 'approachHcp', 'chipHcp', 'sandHcp', 'puttHcp']);
+const KEY_RE = /ghin|usga|index|hcp|handicap|hdcp/i;
+function walkLeaves(roots: Record<string, any>, fn: (path: string, key: string, v: number) => void): void {
   const walk = (v: any, path: string, depth: number) => {
     if (depth > 6 || v == null) return;
     if (Array.isArray(v)) { v.slice(0, 20).forEach((x, i) => walk(x, `${path}[${i}]`, depth + 1)); return; }
     if (typeof v === 'object') {
       for (const [k, x] of Object.entries(v)) {
-        const p = `${path}.${k}`;
-        if (typeof x === 'number' && /ghin|usga|index/i.test(k) && x > -10 && x < 54) out.push(`${p}=${x}`);
-        walk(x, p, depth + 1);
+        if (typeof x === 'number' && x > -10 && x < 54) fn(`${path}.${k}`, k, x);
+        walk(x, `${path}.${k}`, depth + 1);
       }
     }
   };
   for (const [name, obj] of Object.entries(roots)) walk(obj, name, 0);
+}
+function listIndexCandidates(roots: Record<string, any>): string[] {
+  const out: string[] = [];
+  walkLeaves(roots, (path, k, v) => { if (KEY_RE.test(k) && !ARCCOS_OWN.has(k) && !/goal|target/i.test(k)) out.push(`${path}=${v}`); });
   return out;
 }
-// Picks the official index from the candidates: ghin/usga keys first, then
-// plain "index" keys, first hit in profile order. null when nothing matches.
+// Picks the official index: ghin/usga keys, then index keys, then any other
+// handicap-ish key. null when nothing matches.
 function findOfficialIndex(roots: Record<string, any>): { path: string; value: number; candidates: string[] } | null {
   const candidates = listIndexCandidates(roots);
-  const pick = (re: RegExp) => candidates.find((c) => re.test(c.split('=')[0].split('.').pop() ?? ''));
-  const hit = pick(/ghin|usga/i) ?? pick(/index/i);
+  const keyOf = (c: string) => c.split('=')[0].split('.').pop()?.replace(/\[\d+\]$/, '') ?? '';
+  const pick = (re: RegExp) => candidates.find((c) => re.test(keyOf(c)));
+  const hit = pick(/ghin|usga/i) ?? pick(/index/i) ?? pick(/hcp|handicap|hdcp/i);
   if (!hit) return null;
   const [path, val] = hit.split('=');
   return { path, value: Number(val), candidates };
+}
+// What the search saw, for the site to show when nothing matched: each probed
+// endpoint's status or top-level keys, and every fractional number in handicap
+// range (an index like 12.3) wherever it sits, capped.
+function describeIndexSearch(roots: Record<string, any>): string[] {
+  const out: string[] = [];
+  for (const [name, obj] of Object.entries(roots)) {
+    if (obj == null) { out.push(`${name}: (none)`); continue; }
+    if (obj._error != null) { out.push(`${name}: HTTP ${obj._status ?? '?'}`); continue; }
+    const keys = Array.isArray(obj) ? `list of ${obj.length}` : Object.keys(obj).slice(0, 25).join(' ');
+    out.push(`${name}: {${keys}}`);
+  }
+  const nums: string[] = [];
+  walkLeaves(roots, (path, _k, v) => { if (!Number.isInteger(v) && nums.length < 40) nums.push(`${path}=${v}`); });
+  return out.concat(nums.length ? ['fractional numbers seen: ' + nums.join(', ')] : ['no fractional numbers in handicap range anywhere']);
 }
