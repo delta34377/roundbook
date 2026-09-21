@@ -137,10 +137,6 @@ function fetchProfile(uid: string, token: string): Promise<any> {
   return call('profile', 'GET', `${API}/users/${uid}`, token);
 }
 
-// Optional GET used only to look for the official index: returns the body, or
-// a {_status, _error} stub on any failure, so a probe can never fail a sync.
-async function fetchOptional(step: string, path: string, token: string): Promise<any> {
-  try { return await call(step, 'GET', `${API}${path}`, token, undefined, 8_000); }
   catch (e) { return { _status: e instanceof ArccosError ? e.status : null, _error: String(e?.message ?? e).slice(0, 80) }; }
 }
 
@@ -707,16 +703,9 @@ Deno.serve(async (req) => {
     // Profile failures are not fatal; the handicap object is already verified.
     let profile: any = null;
     try { profile = await fetchProfile(uid, token); } catch (e) { console.warn('profile fetch failed:', String(e)); }
-    // Endpoints the app might use for the official index; each is optional,
-    // capped at 8 s, and they run in parallel so the whole probe is bounded.
-    const probes: Record<string, string> = {
-      settings: `/users/${uid}/settings`, ghin: `/users/${uid}/ghin`, handicapIndex: `/users/${uid}/handicapIndex`,
-      summary: `/users/${uid}/summary`, stats: `/users/${uid}/stats`, v2user: `/v2/users/${uid}`, latestHcps: `/users/${uid}/handicaps?rounds=1`,
-    };
-    const extra: Record<string, any> = {};
-    const results = await Promise.all(Object.entries(probes).map(([name, path]) => fetchOptional(name, path, token)));
-    Object.keys(probes).forEach((name, i) => { extra[name] = results[i]; });
-    const indexRoots = { profile, handicap, ...extra };
+    // Live probe (Sep 2026): the profile carries a top-level `handicap` field
+    // and the guessed extra endpoints all 404, so only these two are searched.
+    const indexRoots = { profile, handicap };
     const indexHit = findOfficialIndex(indexRoots);
 
     // --- derive with the verified prep_data.py math ---
@@ -773,17 +762,24 @@ Deno.serve(async (req) => {
 
 // ---- official index discovery ----
 // Arccos's own six category handicaps and any goal/target field are never the
-// official index; everything else numeric in handicap range with a
-// handicap-ish key is a candidate, ghin/usga keys first.
+// official index; everything else in handicap range with a handicap-ish key is
+// a candidate, ghin/usga keys first. Values may arrive as numbers or as
+// numeric strings ("12.3"); Arccos stores its own handicaps negative, so the
+// magnitude is what counts.
 const ARCCOS_OWN = new Set(['userHcp', 'driveHcp', 'approachHcp', 'chipHcp', 'sandHcp', 'puttHcp']);
 const KEY_RE = /ghin|usga|index|hcp|handicap|hdcp/i;
-function walkLeaves(roots: Record<string, any>, fn: (path: string, key: string, v: number) => void): void {
+function asHcp(x: any): number | null {
+  const n = typeof x === 'number' ? x : (typeof x === 'string' && /^\s*[-+]?\d+(\.\d+)?\s*$/.test(x) ? Number(x) : NaN);
+  return Number.isFinite(n) && n > -54 && n < 54 ? n : null;
+}
+function walkLeaves(roots: Record<string, any>, fn: (path: string, key: string, v: number, raw: any) => void): void {
   const walk = (v: any, path: string, depth: number) => {
     if (depth > 6 || v == null) return;
     if (Array.isArray(v)) { v.slice(0, 20).forEach((x, i) => walk(x, `${path}[${i}]`, depth + 1)); return; }
     if (typeof v === 'object') {
       for (const [k, x] of Object.entries(v)) {
-        if (typeof x === 'number' && x > -10 && x < 54) fn(`${path}.${k}`, k, x);
+        const n = asHcp(x);
+        if (n != null) fn(`${path}.${k}`, k, n, x);
         walk(x, `${path}.${k}`, depth + 1);
       }
     }
@@ -804,7 +800,7 @@ function findOfficialIndex(roots: Record<string, any>): { path: string; value: n
   const hit = pick(/ghin|usga/i) ?? pick(/index/i) ?? pick(/hcp|handicap|hdcp/i);
   if (!hit) return null;
   const [path, val] = hit.split('=');
-  return { path, value: Number(val), candidates };
+  return { path, value: Math.abs(Number(val)), candidates };
 }
 // What the search saw, for the site to show when nothing matched: each probed
 // endpoint's status or top-level keys, and every fractional number in handicap
@@ -817,7 +813,18 @@ function describeIndexSearch(roots: Record<string, any>): string[] {
     const keys = Array.isArray(obj) ? `list of ${obj.length}` : Object.keys(obj).slice(0, 25).join(' ');
     out.push(`${name}: {${keys}}`);
   }
+  // any handicap-named field that is not a plain number, shown raw (capped)
+  const raw: string[] = [];
+  const show = (v: any, path: string, depth: number) => {
+    if (depth > 6 || v == null || typeof v !== 'object') return;
+    if (Array.isArray(v)) { v.slice(0, 20).forEach((x, i) => show(x, `${path}[${i}]`, depth + 1)); return; }
+    for (const [k, x] of Object.entries(v)) {
+      if (KEY_RE.test(k) && !ARCCOS_OWN.has(k) && typeof x !== 'number' && raw.length < 12) raw.push(`${path}.${k}=${JSON.stringify(x).slice(0, 240)}`);
+      show(x, `${path}.${k}`, depth + 1);
+    }
+  };
+  for (const [name, obj] of Object.entries(roots)) show(obj, name, 0);
   const nums: string[] = [];
   walkLeaves(roots, (path, _k, v) => { if (!Number.isInteger(v) && nums.length < 40) nums.push(`${path}=${v}`); });
-  return out.concat(nums.length ? ['fractional numbers seen: ' + nums.join(', ')] : ['no fractional numbers in handicap range anywhere']);
+  return out.concat(raw.length ? ['handicap-named fields, raw: ' + raw.join(' ; ')] : [], nums.length ? ['fractional numbers seen: ' + nums.join(', ')] : ['no fractional numbers in handicap range anywhere']);
 }
