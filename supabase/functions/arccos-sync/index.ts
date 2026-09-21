@@ -210,12 +210,15 @@ Deno.serve(async (req) => {
     // Profile failures are not fatal; the handicap object is already verified.
     let profile: any = null;
     try { profile = await fetchProfile(uid, token); } catch (e) { console.warn('profile fetch failed:', String(e)); }
-    // Endpoints the app might use for the official index; each is optional.
-    const extra: Record<string, any> = {};
-    for (const [name, path] of Object.entries({
+    // Endpoints the app might use for the official index; each is optional,
+    // capped at 8 s, and they run in parallel so the whole probe is bounded.
+    const probes: Record<string, string> = {
       settings: `/users/${uid}/settings`, ghin: `/users/${uid}/ghin`, handicapIndex: `/users/${uid}/handicapIndex`,
       summary: `/users/${uid}/summary`, stats: `/users/${uid}/stats`, v2user: `/v2/users/${uid}`, latestHcps: `/users/${uid}/handicaps?rounds=1`,
-    })) extra[name] = await fetchOptional(name, path, token);
+    };
+    const extra: Record<string, any> = {};
+    const results = await Promise.all(Object.entries(probes).map(([name, path]) => fetchOptional(name, path, token)));
+    Object.keys(probes).forEach((name, i) => { extra[name] = results[i]; });
     const indexRoots = { profile, handicap, ...extra };
     const indexHit = findOfficialIndex(indexRoots);
 

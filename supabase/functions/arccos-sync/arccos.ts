@@ -22,12 +22,16 @@ export class ArccosError extends Error {
   }
 }
 
+// Every Arccos call has a deadline so a hung connection can never stall a sync
+// until the platform kills it (the site's Sync button would just sit there).
+const CALL_TIMEOUT_MS = 45_000;
 async function call(
   step: string,
   method: string,
   url: string,
   token?: string | null,
-  body?: unknown
+  body?: unknown,
+  timeoutMs: number = CALL_TIMEOUT_MS
 ): Promise<any> {
   const headers: Record<string, string> = {
     'User-Agent': UA,
@@ -35,11 +39,17 @@ async function call(
   };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    throw new ArccosError(step, null, `${String(e?.name ?? 'fetch')}: ${String(e?.message ?? e).slice(0, 200)}`);
+  }
   const text = await res.text();
   if (!res.ok) {
     throw new ArccosError(step, res.status, `HTTP ${res.status}: ${text.slice(0, 300)}`);
@@ -121,6 +131,6 @@ export function fetchProfile(uid: string, token: string): Promise<any> {
 // Optional GET used only to look for the official index: returns the body, or
 // a {_status, _error} stub on any failure, so a probe can never fail a sync.
 export async function fetchOptional(step: string, path: string, token: string): Promise<any> {
-  try { return await call(step, 'GET', `${API}${path}`, token); }
+  try { return await call(step, 'GET', `${API}${path}`, token, undefined, 8_000); }
   catch (e) { return { _status: e instanceof ArccosError ? e.status : null, _error: String(e?.message ?? e).slice(0, 80) }; }
 }

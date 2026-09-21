@@ -193,7 +193,13 @@ function wireSync(supabase) {
   btn.addEventListener('click', async () => {
     btn.disabled = true
     btn.textContent = 'Syncing…'
-    const { data, error } = await supabase.functions.invoke('arccos-sync', { body: {} })
+    // Show a running clock so a long sync never looks frozen, and stop waiting
+    // after 4 minutes (the function itself gives up well before that).
+    const t0 = Date.now()
+    const tick = setInterval(() => { btn.textContent = `Syncing… ${Math.round((Date.now() - t0) / 1000)}s` }, 1000)
+    const timeout = new Promise((resolve) => setTimeout(() => resolve({ data: null, error: new Error('No reply from the sync after 4 minutes. It may still be running; reload in a minute and check the last-sync line.') }), 240_000))
+    const { data, error } = await Promise.race([supabase.functions.invoke('arccos-sync', { body: {} }), timeout])
+    clearInterval(tick)
     if (error || data?.error) {
       console.error('sync failed:', error || data?.error)
       btn.disabled = false
