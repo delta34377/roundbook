@@ -137,9 +137,6 @@ function fetchProfile(uid: string, token: string): Promise<any> {
   return call('profile', 'GET', `${API}/users/${uid}`, token);
 }
 
-  catch (e) { return { _status: e instanceof ArccosError ? e.status : null, _error: String(e?.message ?? e).slice(0, 80) }; }
-}
-
 // ===================== derive.ts =====================
 // derive.ts — TypeScript port of prep_data.py (the reference).
 // Turns a raw Arccos export shape into the dashboard payload. Dependency-free
