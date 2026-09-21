@@ -25,7 +25,7 @@
 //     existing row is left untouched
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { deriveDashData } from './derive.ts';
-import { ArccosError, fetchCourseDetail, fetchHandicap, fetchRoundDetail, fetchRoundsList, fetchSmartDistances, login, tokenFor } from './arccos.ts';
+import { ArccosError, fetchCourseDetail, fetchHandicap, fetchProfile, fetchRoundDetail, fetchRoundsList, fetchSmartDistances, login, tokenFor } from './arccos.ts';
 
 const DETAIL_DELAY_MS = 300;
 const RECENT_REFRESH = 2;
@@ -203,6 +203,14 @@ Deno.serve(async (req) => {
         return json(500, { error: `handicap response missing numeric ${k}` });
       }
     }
+    // The official index (USGA/GHIN, shown under the player's name in the app)
+    // is a different number from Arccos's own userHcp. Its key is not
+    // documented, so look for it in the profile and handicap responses: any
+    // numeric field in handicap range whose key mentions ghin, usga or index.
+    // Profile failures are not fatal; the handicap object is already verified.
+    let profile: any = null;
+    try { profile = await fetchProfile(uid, token); } catch (e) { console.warn('profile fetch failed:', String(e)); }
+    const indexHit = findOfficialIndex({ profile, handicap });
 
     // --- derive with the verified prep_data.py math ---
     const payload = deriveDashData({
@@ -215,10 +223,18 @@ Deno.serve(async (req) => {
       return json(500, { error: 'derivation produced zero rounds; refusing to overwrite' });
     }
 
-    // hcp: Arccos's current handicap (cat.overall, from /handicaps/latest) so it
-    // tracks the account after every sync; ROUNDBOOK_HCP is a manual override only.
+    // hcp: the official index when Arccos exposes it, else Arccos's own
+    // handicap (cat.overall); ROUNDBOOK_HCP is a manual override only. The
+    // source is stored so the site can say where the number came from.
     const envHcp = Number(Deno.env.get('ROUNDBOOK_HCP'));
-    payload.hcp = Number.isFinite(envHcp) && envHcp > 0 ? envHcp : payload.cat.overall;
+    if (Number.isFinite(envHcp) && envHcp > 0) {
+      payload.hcp = envHcp; payload.hcpSource = 'ROUNDBOOK_HCP secret';
+    } else if (indexHit) {
+      payload.hcp = indexHit.value; payload.hcpSource = `Arccos ${indexHit.path}`;
+    } else {
+      payload.hcp = payload.cat.overall; payload.hcpSource = 'Arccos handicap (userHcp); no USGA index field found';
+    }
+    payload.hcpCandidates = indexHit ? indexHit.candidates : listIndexCandidates({ profile, handicap });
 
     const { error: upErr } = await supabase.from('roundbook_data').upsert({
       id: 1,
@@ -237,6 +253,8 @@ Deno.serve(async (req) => {
       coursesFetched,
       skipped,
       hcp: payload.hcp,
+      hcpSource: payload.hcpSource,
+      hcpCandidates: payload.hcpCandidates,
       ms: Date.now() - t0,
     });
   } catch (e) {
@@ -245,3 +263,34 @@ Deno.serve(async (req) => {
     return json(500, { error: msg });
   }
 });
+
+// ---- official index discovery ----
+// Walks the given objects (depth-first, lists capped) and returns every numeric
+// leaf in handicap range (-10..54) whose key mentions ghin, usga or index, as
+// "root.path=value" strings. Nothing else from the profile is kept.
+function listIndexCandidates(roots: Record<string, any>): string[] {
+  const out: string[] = [];
+  const walk = (v: any, path: string, depth: number) => {
+    if (depth > 6 || v == null) return;
+    if (Array.isArray(v)) { v.slice(0, 20).forEach((x, i) => walk(x, `${path}[${i}]`, depth + 1)); return; }
+    if (typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) {
+        const p = `${path}.${k}`;
+        if (typeof x === 'number' && /ghin|usga|index/i.test(k) && x > -10 && x < 54) out.push(`${p}=${x}`);
+        walk(x, p, depth + 1);
+      }
+    }
+  };
+  for (const [name, obj] of Object.entries(roots)) walk(obj, name, 0);
+  return out;
+}
+// Picks the official index from the candidates: ghin/usga keys first, then
+// plain "index" keys, first hit in profile order. null when nothing matches.
+function findOfficialIndex(roots: Record<string, any>): { path: string; value: number; candidates: string[] } | null {
+  const candidates = listIndexCandidates(roots);
+  const pick = (re: RegExp) => candidates.find((c) => re.test(c.split('=')[0].split('.').pop() ?? ''));
+  const hit = pick(/ghin|usga/i) ?? pick(/index/i);
+  if (!hit) return null;
+  const [path, val] = hit.split('=');
+  return { path, value: Number(val), candidates };
+}
