@@ -171,7 +171,7 @@ async function loadDashboard(supabase) {
   document.getElementById('rb-updated').textContent = updated + hcpNote
   const cands = Array.isArray(data.data?.hcpCandidates) ? data.data.hcpCandidates : []
   document.getElementById('rb-updated').title = cands.length ? 'Index search: ' + cands.join(' | ') : ''
-  if (/no USGA index/.test(String(data.data?.hcpSource || '')) && cands.length) {
+  if (/no USGA index|GHIN not set up|GHIN:/.test(String(data.data?.hcpSource || '')) && cands.length) {
     const d = document.createElement('div')
     d.className = 'rb-diag'
     d.textContent = 'Index search (no USGA index found yet): ' + cands.join(' | ')

@@ -87,7 +87,12 @@ curl -X POST https://<PROJECT_REF>.supabase.co/functions/v1/arccos-sync \
 
 Expect JSON with rounds/holes counts and the through-date. `{"full": true}`
 refetches all geometry if the cache is ever suspect. Optional secret
-`ROUNDBOOK_HCP` overrides the handicap used by the dashboard (by default it is the handicap Arccos reports for the account, refreshed on every sync).
+The dashboard's handicap comes from, in order: the `ROUNDBOOK_HCP` secret if
+set; GHIN (the official USGA index, read on every sync when the `GHIN_EMAIL`
+and `GHIN_PASSWORD` secrets are set: Edge Functions -> Secrets in the Supabase
+dashboard, no CLI needed); an index-like field in the Arccos profile
+(`profile.handicap`, a whole-number sign-up field); else Arccos's own handicap
+estimate. The site prints which one it used next to the last-sync date.
 
 The site's **Sync button** (top right after login) triggers the same function
 with your login session token; the function accepts it only when the token's
