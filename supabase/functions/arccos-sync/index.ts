@@ -25,7 +25,8 @@
 //     existing row is left untouched
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { deriveDashData } from './derive.ts';
-import { ArccosError, fetchCourseDetail, fetchHandicap, fetchProfile, fetchRoundDetail, fetchRoundsList, fetchSmartDistances, login, tokenFor } from './arccos.ts';
+import { ArccosError, fetchCourseDetail, fetchHandicap, fetchOptional, fetchProfile, fetchRoundDetail, fetchRoundsList, fetchSmartDistances, login, tokenFor } from './arccos.ts';
+import { fetchGhinIndex } from './ghin.ts';
 
 const DETAIL_DELAY_MS = 300;
 const RECENT_REFRESH = 2;
@@ -210,10 +211,22 @@ Deno.serve(async (req) => {
     // Profile failures are not fatal; the handicap object is already verified.
     let profile: any = null;
     try { profile = await fetchProfile(uid, token); } catch (e) { console.warn('profile fetch failed:', String(e)); }
-    // Live probe (Sep 2026): the profile carries a top-level `handicap` field
-    // and the guessed extra endpoints all 404, so only these two are searched.
-    const indexRoots = { profile, handicap };
+    // Live probes (Sep 2026): profile.handicap is a whole-number sign-up field
+    // (12, not the 12.3 the app shows) and settings/ghin/handicapIndex/summary/
+    // stats/v2 users all 404. One last batch of guesses runs here, each capped
+    // at 8 s and in parallel; then GHIN itself, when its secrets are set.
+    const probes: Record<string, string> = {
+      integrations: `/users/${uid}/integrations`, connections: `/users/${uid}/connections`, linked: `/users/${uid}/linkedAccounts`,
+      external: `/users/${uid}/externalHandicaps`, usga: `/users/${uid}/usga`, hcpSingular: `/users/${uid}/handicap`, v3user: `/v3/users/${uid}`,
+    };
+    const extra: Record<string, any> = {};
+    const results = await Promise.all(Object.entries(probes).map(([name, path]) => fetchOptional(name, path, token)));
+    Object.keys(probes).forEach((name, i) => { extra[name] = results[i]; });
+    const indexRoots = { profile, handicap, ...extra };
     const indexHit = findOfficialIndex(indexRoots);
+    const ghinEmail = Deno.env.get('GHIN_EMAIL'), ghinPassword = Deno.env.get('GHIN_PASSWORD');
+    const ghin = ghinEmail && ghinPassword ? await fetchGhinIndex(ghinEmail, ghinPassword) : null;
+    if (ghin && 'error' in ghin) console.warn('GHIN:', ghin.error);
 
     // --- derive with the verified prep_data.py math ---
     const payload = deriveDashData({
@@ -230,14 +243,17 @@ Deno.serve(async (req) => {
     // handicap (cat.overall); ROUNDBOOK_HCP is a manual override only. The
     // source is stored so the site can say where the number came from.
     const envHcp = Number(Deno.env.get('ROUNDBOOK_HCP'));
+    const ghinNote = ghin == null ? 'GHIN not set up (add GHIN_EMAIL and GHIN_PASSWORD secrets)' : 'error' in ghin ? `GHIN: ${ghin.error}` : `GHIN ok: ${ghin.index}`;
     if (Number.isFinite(envHcp) && envHcp > 0) {
       payload.hcp = envHcp; payload.hcpSource = 'ROUNDBOOK_HCP secret';
+    } else if (ghin && !('error' in ghin)) {
+      payload.hcp = ghin.index; payload.hcpSource = ghin.source;
     } else if (indexHit) {
-      payload.hcp = indexHit.value; payload.hcpSource = `Arccos ${indexHit.path}`;
+      payload.hcp = indexHit.value; payload.hcpSource = `Arccos ${indexHit.path}; ${ghinNote}`;
     } else {
-      payload.hcp = payload.cat.overall; payload.hcpSource = 'Arccos handicap (userHcp); no USGA index field found';
+      payload.hcp = payload.cat.overall; payload.hcpSource = `Arccos handicap (userHcp); no USGA index field found; ${ghinNote}`;
     }
-    payload.hcpCandidates = indexHit ? indexHit.candidates : describeIndexSearch(indexRoots);
+    payload.hcpCandidates = ghin && !('error' in ghin) ? [] : [ghinNote].concat(indexHit ? indexHit.candidates : describeIndexSearch(indexRoots));
 
     const { error: upErr } = await supabase.from('roundbook_data').upsert({
       id: 1,
