@@ -111,3 +111,9 @@ export function fetchSmartDistances(uid: string, token: string): Promise<any> {
 export function fetchHandicap(uid: string, token: string): Promise<any> {
   return call('handicap', 'GET', `${API}/users/${uid}/handicaps/latest`, token);
 }
+
+// Player profile: where the USGA/GHIN index the app shows under the name is
+// expected to live (the exporter saves the same call as `profile`).
+export function fetchProfile(uid: string, token: string): Promise<any> {
+  return call('profile', 'GET', `${API}/users/${uid}`, token);
+}

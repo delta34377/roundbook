@@ -165,7 +165,13 @@ async function loadDashboard(supabase) {
       topbarRight() +
       '</div><div id="rb-host" class="rb-scope"></div></div>'
   )
-  document.getElementById('rb-updated').textContent = updated
+  const hcpNote = data.data?.hcp != null
+    ? ` · handicap ${data.data.hcp}${data.data.hcpSource ? ' (' + data.data.hcpSource + ')' : ''}`
+    : ''
+  document.getElementById('rb-updated').textContent = updated + hcpNote
+  document.getElementById('rb-updated').title = Array.isArray(data.data?.hcpCandidates) && data.data.hcpCandidates.length
+    ? 'Index fields seen in Arccos: ' + data.data.hcpCandidates.join(', ')
+    : 'No USGA index field found in the Arccos profile or handicap responses'
   wireTopbar(supabase)
   const host = document.getElementById('rb-host')
   host.innerHTML = RB_BODY_HTML
