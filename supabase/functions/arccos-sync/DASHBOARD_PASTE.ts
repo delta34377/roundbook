@@ -31,12 +31,16 @@ class ArccosError extends Error {
   }
 }
 
+// Every Arccos call has a deadline so a hung connection can never stall a sync
+// until the platform kills it (the site's Sync button would just sit there).
+const CALL_TIMEOUT_MS = 45_000;
 async function call(
   step: string,
   method: string,
   url: string,
   token?: string | null,
-  body?: unknown
+  body?: unknown,
+  timeoutMs: number = CALL_TIMEOUT_MS
 ): Promise<any> {
   const headers: Record<string, string> = {
     'User-Agent': UA,
@@ -44,11 +48,17 @@ async function call(
   };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    throw new ArccosError(step, null, `${String(e?.name ?? 'fetch')}: ${String(e?.message ?? e).slice(0, 200)}`);
+  }
   const text = await res.text();
   if (!res.ok) {
     throw new ArccosError(step, res.status, `HTTP ${res.status}: ${text.slice(0, 300)}`);
@@ -130,7 +140,7 @@ function fetchProfile(uid: string, token: string): Promise<any> {
 // Optional GET used only to look for the official index: returns the body, or
 // a {_status, _error} stub on any failure, so a probe can never fail a sync.
 async function fetchOptional(step: string, path: string, token: string): Promise<any> {
-  try { return await call(step, 'GET', `${API}${path}`, token); }
+  try { return await call(step, 'GET', `${API}${path}`, token, undefined, 8_000); }
   catch (e) { return { _status: e instanceof ArccosError ? e.status : null, _error: String(e?.message ?? e).slice(0, 80) }; }
 }
 
@@ -697,12 +707,15 @@ Deno.serve(async (req) => {
     // Profile failures are not fatal; the handicap object is already verified.
     let profile: any = null;
     try { profile = await fetchProfile(uid, token); } catch (e) { console.warn('profile fetch failed:', String(e)); }
-    // Endpoints the app might use for the official index; each is optional.
-    const extra: Record<string, any> = {};
-    for (const [name, path] of Object.entries({
+    // Endpoints the app might use for the official index; each is optional,
+    // capped at 8 s, and they run in parallel so the whole probe is bounded.
+    const probes: Record<string, string> = {
       settings: `/users/${uid}/settings`, ghin: `/users/${uid}/ghin`, handicapIndex: `/users/${uid}/handicapIndex`,
       summary: `/users/${uid}/summary`, stats: `/users/${uid}/stats`, v2user: `/v2/users/${uid}`, latestHcps: `/users/${uid}/handicaps?rounds=1`,
-    })) extra[name] = await fetchOptional(name, path, token);
+    };
+    const extra: Record<string, any> = {};
+    const results = await Promise.all(Object.entries(probes).map(([name, path]) => fetchOptional(name, path, token)));
+    Object.keys(probes).forEach((name, i) => { extra[name] = results[i]; });
     const indexRoots = { profile, handicap, ...extra };
     const indexHit = findOfficialIndex(indexRoots);
 
