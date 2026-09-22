@@ -831,6 +831,14 @@ Deno.serve(async (req) => {
       payload.hcp = payload.cat.overall; payload.hcpSource = `Arccos handicap (userHcp); no USGA index field found; ${ghinNote}`;
     }
     payload.hcpCandidates = ghin && !('error' in ghin) ? [] : [ghinNote].concat(indexHit ? indexHit.candidates : describeIndexSearch(indexRoots));
+    // The handicap body's numeric fields exactly as Arccos sent them (signed, unrounded), so the
+    // site can show what each grade bar came from. cat{} keeps only rounded magnitudes. Id-like
+    // keys are skipped; the payload may be public-view.
+    const hcpRawF: Record<string, number> = {};
+    for (const [k, v] of Object.entries(handicap ?? {})) {
+      if (typeof v === 'number' && !/id$/i.test(k)) hcpRawF[k] = v;
+    }
+    payload.hcpRaw = { at: new Date().toISOString(), f: hcpRawF };
 
     const { error: upErr } = await supabase.from('roundbook_data').upsert({
       id: 1,
