@@ -369,13 +369,27 @@ function renderOverview(){
     plugins:{legend:{display:false},tooltip:{enabled:false}},
     scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:12.5}}},y:{grid:{color:GRID},border:{display:false},ticks:{callback:v=>v+'%'}}}}});
 
-  const cats=[['Putting',D.cat.putting],['Approach',D.cat.approach],['Chipping',D.cat.chipping],['Sand',D.cat.sand],['Driving',D.cat.driving]];
-  const cc=draw('cats',{type:'bar',data:{labels:cats.map(c=>c[0]),datasets:[{data:cats.map(c=>c[1]),
-    backgroundColor:cats.map(c=>c[0]==='Putting'?'#e35a50':'#4ea87a'),borderRadius:4,borderSkipped:'start',barThickness:22}]},
-    plugins:[endLab],options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:30}},
+  // Arccos's category handicaps, worst first. Colour comes from the numbers: red = Arccos grades it
+  // worse than its own overall handicap (dashed line), green = better. Nothing is red by name.
+  const cats=[['Putting',D.cat.putting],['Approach',D.cat.approach],['Chipping',D.cat.chipping],['Sand',D.cat.sand],['Driving',D.cat.driving]].sort((x,y)=>y[1]-x[1]);
+  const cOv=D.cat.overall;
+  const ovL={id:'ovL',afterDatasetsDraw(ch){const xs=ch.scales.x,a=ch.chartArea,x=ch.ctx;const xx=xs.getPixelForValue(cOv);if(xx<a.left||xx>a.right)return;x.save();x.strokeStyle='rgba(238,243,236,.55)';x.setLineDash([5,4]);x.beginPath();x.moveTo(xx,a.top);x.lineTo(xx,a.bottom);x.stroke();x.setLineDash([]);x.fillStyle='#93a99c';x.font='10px Inter';x.textAlign='center';x.fillText('Arccos overall '+cOv.toFixed(1),xx,a.top-5);x.restore();}};
+  draw('cats',{type:'bar',data:{labels:cats.map(c=>c[0]),datasets:[{data:cats.map(c=>c[1]),
+    backgroundColor:cats.map(c=>c[1]>cOv?'#e35a50':'#4ea87a'),borderRadius:4,borderSkipped:'start',barThickness:22}]},
+    plugins:[endLab,ovL],options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:30,top:14}},
     plugins:{legend:{display:false},tooltip:{enabled:false}},
     scales:{x:{suggestedMin:0,suggestedMax:28,grid:{color:GRID},border:{display:false}},y:{grid:{display:false},border:{display:false},ticks:{font:{size:12.5}}}}}});
   charts['cats'].$lab=cats.map(c=>c[1].toFixed(1));charts['cats'].update();
+  // When Arccos's putting grade and this view's putting numbers point opposite ways, say so and why.
+  const arcPutBad=D.cat.putting>cOv;
+  let cn='';
+  if(a.hp&&arcPutBad!==puttBad){
+    const here=`here you three-putt <b>${a.threePct.toFixed(0)}%</b> of holes (~${Math.round(bench('tp',D.hcp))}% for your handicap)`;
+    cn=arcPutBad
+      ?`Arccos and this view disagree on putting. Arccos grades it <b>${D.cat.putting.toFixed(1)}</b>, worse than its ${cOv.toFixed(1)} overall, but ${here}. Arccos's grade is account-wide and strokes-gained based, so it weighs each putt by its length. The counts on this page are raw putts from the rounds in view.`
+      :`Arccos and this view disagree on putting. Arccos grades it <b>${D.cat.putting.toFixed(1)}</b>, better than its ${cOv.toFixed(1)} overall, but ${here}. Arccos's grade is account-wide and strokes-gained based, so it weighs each putt by its length. The counts on this page are raw putts from the rounds in view, and Air can log fringe strokes as putts (see the Putting tab).`;
+  }
+  document.getElementById('catNote').innerHTML=cn;
 
   const pl=[...a.paceList].sort((x,y)=>x.date<y.date?-1:1);
   draw('trend',{type:'line',data:{labels:pl.map(p=>p.date.slice(5)),datasets:[{data:pl.map(p=>p.pace),
@@ -761,13 +775,19 @@ function renderTakeaways(){
   // strengths
   let s=str.map(it=>takeCard('g',it.label,it.stat,it.body)).join('');
   if(!str.length)s='<p class="emptyt">No standout strengths in this slice — small sample.</p>';
-  s+=takeCard('g','Sand play <span class="aw">all rounds</span>','#2',`Arccos grades your sand game (${D.cat.sand}) second only to driving. Account-wide grade — per-shot sand data isn't exportable.`);
+  // sand: rank and side come from Arccos's category grades (lower is better), never assumed
+  const cR=[['putting',D.cat.putting],['approach',D.cat.approach],['chipping',D.cat.chipping],['sand',D.cat.sand],['driving',D.cat.driving]].sort((x,y)=>x[1]-y[1]);
+  const sR=cR.findIndex(c=>c[0]==='sand')+1,sGood=D.cat.sand<=D.cat.overall;
+  const sPos=sR===1?'your best of the five categories':sR===2?`second only to ${cR[0][0]}`:`#${sR} of five, behind ${cR.slice(0,sR-1).map(c=>c[0]).join(', ')}`;
+  const sBody=`Arccos grades your sand game ${D.cat.sand.toFixed(1)}, ${sPos}, and ${sGood?'better than':'worse than'} its ${D.cat.overall.toFixed(1)} overall. Account-wide grade; per-shot sand data isn't exportable.`;
+  if(sGood)s+=takeCard('g','Sand play <span class="aw">all rounds</span>','#'+sR,sBody);
   document.getElementById('strengths').innerHTML=s;
   // focus (ranked, #1 is hot)
   let f=foc.map((it,i)=>`<div class="take ${i===0?'f hot':'f'}"><div class="th"><p class="tt"><span class="rank">${i+1}</span>${it.label}</p><div class="ts">${it.stat}</div></div><p class="tb">${it.body}</p></div>`).join('');
   if(!foc.length)f='<p class="emptyt">Nothing is screaming for attention in this slice — nice.</p>';
   let mg=0,gA='',gB='',dA=0,dB=0;for(let i=1;i<D.ladder.length;i++){if(D.ladder[i].dist>=130)continue;const g=D.ladder[i-1].dist-D.ladder[i].dist;if(g>mg){mg=g;gA=D.ladder[i-1].name;gB=D.ladder[i].name;dA=D.ladder[i-1].dist;dB=D.ladder[i].dist;}}
   if(mg)f+=takeCard('f','Wedge gapping <span class="aw">all rounds</span>',mg+'y',`Biggest gap in your scoring zone is ${gA} (${dA}y) → ${gB} (${dB}y). A club around ${Math.round((dA+dB)/2)}y fills it with a stock swing instead of a half-shot.`);
+  if(!sGood)f+=takeCard('f','Sand play <span class="aw">all rounds</span>','#'+sR,sBody);
   document.getElementById('focus').innerHTML=f;
 }
 
@@ -829,21 +849,30 @@ function renderApproach(){
   const rs=filtered();
   let H=[]; rs.forEach(r=>r.holes.forEach(h=>H.push(h)));
   const bands=[[50,100,'50-100'],[100,125,'100-125'],[125,150,'125-150'],[150,175,'150-175'],[175,200,'175-200'],[200,400,'200+']];
+  // Approaches only: par-3 tee shots, and on par 4s and 5s the shots after the drive that start within
+  // reach (longest non-driver smart distance + 20y). ap holds every shot from 50y+, so without this the
+  // drives and layups (a 380y drive that leaves 130y reads as "390 ft from the pin") swamp the 200+ band.
+  const rch=D.ladder.filter(c=>c.name!=='Driver').sort((x,y)=>y.dist-x.dist)[0],reach=rch?rch.dist+20:Infinity;
+  const AP_MIN=5; // shots a band needs before its median is drawn
   const A={}; bands.forEach(b=>A[b[2]]={hit:0,n:0,prox:[]});
-  H.forEach(h=>(h.ap||[]).forEach(p=>{const sd=p[0],pf=p[1];for(const bb of bands){if(sd>=bb[0]&&sd<bb[1]){A[bb[2]].n++;if(pf<=33)A[bb[2]].hit++;A[bb[2]].prox.push(pf);break;}}}));
+  H.forEach(h=>(h.ap||[]).forEach((p,i)=>{const sd=p[0],pf=p[1];if((h.par>3&&i===0&&!h.pen)||sd>reach)return;for(const bb of bands){if(sd>=bb[0]&&sd<bb[1]){A[bb[2]].n++;if(pf<=33)A[bb[2]].hit++;A[bb[2]].prox.push(pf);break;}}}));
   const med=a=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;};
-  const labs=bands.map(b=>b[2]).filter(l=>A[l].n>0);
-  draw('apHit',{type:'bar',data:{labels:labs,datasets:[{data:labs.map(l=>Math.round(100*A[l].hit/A[l].n)),backgroundColor:'#4ea87a',borderRadius:4,borderSkipped:'start',barThickness:40}]},
+  const labs=bands.map(b=>b[2]).filter(l=>A[l].n>=AP_MIN);
+  const thin=bands.map(b=>b[2]).filter(l=>A[l].n>0&&A[l].n<AP_MIN);
+  document.getElementById('apNote').textContent=`Approach shots only: tee shots on par 3s, and on par 4s and 5s the shots after the drive${rch?`, from ${reach} yds in (your ${rch.name} at ${rch.dist}y plus 20)`:''}. Drives and longer layups are left out.`+
+    (thin.length?` Not drawn, under ${AP_MIN} shots: ${thin.map(l=>l+' ('+A[l].n+')').join(', ')}.`:'');
+  const tl=labs.map(l=>[l,A[l].n+' shots']);
+  draw('apHit',{type:'bar',data:{labels:tl,datasets:[{data:labs.map(l=>Math.round(100*A[l].hit/A[l].n)),backgroundColor:'#4ea87a',borderRadius:4,borderSkipped:'start',barThickness:40}]},
     plugins:[topLab],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:18}},plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:11}}},y:{grid:{color:GRID},border:{display:false},max:100,title:{display:true,text:'hit green %'},ticks:{callback:v=>v+'%'}}}}});
   charts['apHit'].$fmt=v=>v+'%';charts['apHit'].update();
-  draw('apProx',{type:'bar',data:{labels:labs,datasets:[
+  draw('apProx',{type:'bar',data:{labels:tl,datasets:[
     {label:'You',data:labs.map(l=>Math.round(med(A[l].prox))),backgroundColor:'#c9a24a',borderRadius:4,borderSkipped:'start'},
     {label:'Tour',data:labs.map(l=>TOURPROX[l]||null),backgroundColor:'#39564a',borderRadius:4,borderSkipped:'start'}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11}}},tooltip:{enabled:true,callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+' ft'}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:11}}},y:{grid:{color:GRID},border:{display:false},title:{display:true,text:'feet from pin'}}}}});
   // dynamic insight from wedge band
   const w=A['50-100'];
   const ah=document.getElementById('apHead'),asub=document.getElementById('apSub');
-  if(w&&w.n){const wp=Math.round(med(w.prox));
+  if(w&&w.n>=AP_MIN){const wp=Math.round(med(w.prox));
     ah.textContent=`From wedge range you're leaving it ${wp} feet.`;
     asub.innerHTML=`From 50–100 yards you finish about <b>${wp} ft</b> from the pin (tour ~${TOURPROX['50-100']} ft) and hit the green <b>${Math.round(100*w.hit/w.n)}%</b> of the time. Tighter approaches here is the upstream fix for both leaks — closer shots mean more greens hit and shorter first putts on the ones you do.`;}
   else {ah.textContent='Approach proximity by distance.';asub.textContent='Not enough approach shots in this filter to break down.';}
@@ -1297,7 +1326,7 @@ BODY = """
     </div>
     <div class="grid">
       <div class="card"><h4>Scorecard shape</h4><p class="cap">Every hole by result, in the current filter.</p><div class="chartbox" style="height:230px"><canvas id="dist"></canvas></div></div>
-      <div class="card"><h4>Arccos grades your game</h4><p class="cap">Arccos's own category handicaps — account-wide, untouched by your filters (the export can't rebuild them). Lower is better.</p><div class="chartbox" style="height:230px"><canvas id="cats"></canvas></div></div>
+      <div class="card"><h4>Arccos grades your game</h4><p class="cap">Arccos's own category handicaps, account-wide and untouched by your filters. Lower is better: red grades worse than Arccos's overall number (dashed line), green better.</p><div class="chartbox" style="height:230px"><canvas id="cats"></canvas></div><p class="note" id="catNote"></p></div>
       <div class="card"><h4>Scoring, round by round</h4><p class="cap">Each round scaled to an 18-hole pace.</p><div class="chartbox" style="height:220px"><canvas id="trend"></canvas></div></div>
       <div class="card"><h4>By par type</h4><p class="cap">Strokes over par.</p><div class="chartbox" style="height:220px"><canvas id="parc"></canvas></div></div>
     </div>
@@ -1361,6 +1390,7 @@ BODY = """
       <div class="card"><h4>How often you hit the green</h4><p class="cap">By the distance you're hitting from (full shots over 50 yards).</p><div class="chartbox" style="height:240px"><canvas id="apHit"></canvas></div></div>
       <div class="card"><h4>How close you finish</h4><p class="cap">Median proximity to the pin — you vs tour averages.</p><div class="chartbox" style="height:240px"><canvas id="apProx"></canvas></div></div>
     </div>
+    <p class="note" id="apNote"></p>
     <div class="card full" style="margin-top:16px">
       <p class="eyebrow">By club</p>
       <h4 id="pcHead" style="font-size:18px;margin:0 0 4px"></h4>
