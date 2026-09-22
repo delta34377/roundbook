@@ -48,6 +48,11 @@ export const BENCH={
   tp:[[0,7],[5,10],[10,13],[15,17],[20,21]],
   scr:[[0,60],[5,48],[10,38],[15,30],[20,23]],
   pen:[[0,0.6],[5,1.0],[10,1.4],[15,1.9],[20,2.5]],
+  // Arccos, 'Course Management 101: What Layup Yardage Is Your Sweet Spot?' (arccosgolf.com blog): average distance
+  // to the pin (ft) on approach shots by handicap bracket 0-5 / 6-10 / 11-15 / 16-20 / 20+, placed at bracket
+  // midpoints (20+ at 23, an assumption). Means, all lies. Read from the page by Mark, Sep 2026.
+  px6080:[[2.5,41.38],[8,45.20],[13,50.49],[18,55.21],[23,62.45]],
+  px100120:[[2.5,48.82],[8,54.56],[13,61.85],[18,70.76],[23,83.46]],
 };
 export function bench(stat,hcp){const t=BENCH[stat];if(hcp<=t[0][0])return t[0][1];if(hcp>=t[t.length-1][0])return t[t.length-1][1];
   for(let i=1;i<t.length;i++){if(hcp<=t[i][0]){const f=(hcp-t[i-1][0])/(t[i][0]-t[i-1][0]);return t[i-1][1]+f*(t[i][1]-t[i-1][1]);}}return t[t.length-1][1];}

@@ -14,7 +14,7 @@
 //     scope has no window globals)
 //   - initRoundBook returns destroyRoundBook, which tears down the charts
 import { Chart, registerables } from 'chart.js';
-import { agg, bench, fmtDate, dedupeDates, TREND, TREND_MIN_ROUNDS, TREND_ROLL, tUnit, trendModel, trendHeadline } from './metrics';
+import { agg, BENCH, bench, fmtDate, dedupeDates, TREND, TREND_MIN_ROUNDS, TREND_ROLL, tUnit, trendModel, trendHeadline } from './metrics';
 
 Chart.register(...registerables);
 
@@ -565,6 +565,34 @@ function renderApproach(){
   $('apNote').textContent=`Approach shots only: tee shots on par 3s, and on par 4s and 5s the shots after the drive${rch?`, from ${reach} yds in (your ${rch.name} at ${rch.dist}y plus 20)`:''}. Drives and longer layups are left out.`+
     (thin.length?` Not drawn, under ${AP_MIN} shots: ${thin.map(l=>l+' ('+A[l].n+')').join(', ')}.`:'');
   const tl=labs.map(l=>[l,A[l].n+' shots']);
+  // Against your handicap: Arccos's published average distance to the pin by handicap bracket (BENCH px6080 /
+  // px100120, points at bracket midpoints) vs Mark's AVERAGE from the same windows under the same approach-only
+  // rule. Averages on both sides because that is what Arccos publishes; the charts above stay medians.
+  const HVB=['0-5','6-10','11-15','16-20','20+'],hb=D.hcp<5.5?0:D.hcp<10.5?1:D.hcp<15.5?2:D.hcp<20.5?3:4;
+  const HVW=[['hv1','px6080',60,80],['hv2','px100120',100,120]].map(([id,k,lo,hi])=>{
+    const v=[];H.forEach(h=>(h.ap||[]).forEach((p,i)=>{if((h.par>3&&i===0&&!h.pen)||p[0]>reach)return;if(p[0]>=lo&&p[0]<hi)v.push(p[1]);}));
+    const ref=BENCH[k].map((pt,j)=>({l:HVB[j]+' hcp'+(j===hb?' (yours)':''),ft:pt[1],mine:j===hb}));
+    const you=v.length>=AP_MIN?v.reduce((s,x)=>s+x,0)/v.length:null;
+    const rows=ref.concat(you!=null?[{l:'You ('+v.length+')',ft:you,you:true}]:[]).sort((x,y)=>x.ft-y.ft);
+    draw(id,{type:'bar',data:{labels:rows.map(r=>r.l),datasets:[{data:rows.map(r=>Math.round(r.ft)),backgroundColor:rows.map(r=>r.you?'#c9a24a':r.mine?'#4ea87a':'#39564a'),borderRadius:4,borderSkipped:'start',barThickness:16}]},
+      plugins:[endLab],options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:44}},plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{x:{beginAtZero:true,grid:{color:GRID},border:{display:false},ticks:{callback:x=>x+' ft'}},y:{grid:{display:false},border:{display:false},ticks:{font:{size:11.5}}}}}});
+    charts[id].$lab=rows.map(r=>Math.round(r.ft)+' ft');charts[id].update();
+    const r0=Math.round(ref[hb].ft),y0=you!=null?Math.round(you):null;
+    const st=y0==null?null:y0<r0?'closer':y0>r0?'farther':'level';
+    let near=0;ref.forEach((r,j)=>{if(you!=null&&Math.abs(r.ft-you)<Math.abs(ref[near].ft-you))near=j;});
+    return {lo,hi,n:v.length,you,y0,r0,st,near,best:you!=null&&you<ref[0].ft,worst:you!=null&&you>ref[ref.length-1].ft,ref};
+  });
+  const HVok=HVW.filter(w=>w.st),bN=`the ${HVB[hb]} average`;
+  const hvPh={closer:'closer than',farther:'farther from the pin than',level:'level with'},hvSh={closer:'closer',farther:'farther',level:'level'};
+  $('hvHead').textContent=!HVok.length?'Not enough approach shots in these windows to compare.'
+    :HVok.length===2&&HVok[0].st===HVok[1].st?`${hvPh[HVok[0].st][0].toUpperCase()+hvPh[HVok[0].st].slice(1)} ${bN} from both windows.`
+    :HVok.length===2?`${hvPh[HVok[0].st][0].toUpperCase()+hvPh[HVok[0].st].slice(1)} ${bN} from ${HVok[0].lo} to ${HVok[0].hi} yards, ${hvSh[HVok[1].st]} from ${HVok[1].lo} to ${HVok[1].hi}.`
+    :`${hvPh[HVok[0].st][0].toUpperCase()+hvPh[HVok[0].st].slice(1)} ${bN} from ${HVok[0].lo} to ${HVok[0].hi} yards.`;
+  $('hvSub').innerHTML=HVW.map(w=>w.st
+    ?`From ${w.lo} to ${w.hi} yards you average <b>${w.y0} ft</b> over ${w.n} shots, against ${w.r0} ft for ${bN}`+
+      (w.best?', better than every bracket, 0-5 included.':w.worst?', behind every bracket, 20+ included.':w.near===hb?'.':`; that is nearest the ${HVB[w.near]} average (${Math.round(w.ref[w.near].ft)} ft).`)
+    :`From ${w.lo} to ${w.hi} yards: ${w.n} shot${w.n===1?'':'s'} in this view, under the ${AP_MIN} needed.`).join(' ');
   draw('apHit',{type:'bar',data:{labels:tl,datasets:[{data:labs.map(l=>Math.round(100*A[l].hit/A[l].n)),backgroundColor:'#4ea87a',borderRadius:4,borderSkipped:'start',barThickness:40}]},
     plugins:[topLab],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:18}},plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:11}}},y:{grid:{color:GRID},border:{display:false},max:100,title:{display:true,text:'hit green %'},ticks:{callback:v=>v+'%'}}}}});
   charts['apHit'].$fmt=v=>v+'%';charts['apHit'].update();
