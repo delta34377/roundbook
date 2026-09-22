@@ -3,7 +3,7 @@
 // Nothing in here touches the DOM, so the same functions run in the browser
 // and in the Node parity harness. Rule 1 of CLAUDE.md lives here:
 // every displayed number derives from these functions over the filtered data;
-// BENCH is the single source of handicap references (TOURPROX for tour ones).
+// BENCH is the single source of handicap references.
 export function agg(rs){
   let res={'Eagle+':0,Birdie:0,Par:0,Bogey:0,Double:0,'Triple+':0};
   let sSum={3:0,4:0,5:0},sN={3:0,4:0,5:0};
@@ -51,8 +51,6 @@ export const BENCH={
 };
 export function bench(stat,hcp){const t=BENCH[stat];if(hcp<=t[0][0])return t[0][1];if(hcp>=t[t.length-1][0])return t[t.length-1][1];
   for(let i=1;i<t.length;i++){if(hcp<=t[i][0]){const f=(hcp-t[i-1][0])/(t[i][0]-t[i-1][0]);return t[i-1][1]+f*(t[i][1]-t[i-1][1]);}}return t[t.length-1][1];}
-
-export const TOURPROX={'50-100':16,'100-125':20,'125-150':24,'150-175':29,'175-200':34,'200+':42};
 
 // eslint-disable-next-line no-unused-vars -- verbatim from the reference; y is the unused year
 export function fmtDate(d){const [y,m,da]=d.split('-');const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return M[+m-1]+' '+(+da);}

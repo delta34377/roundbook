@@ -14,7 +14,7 @@
 //     scope has no window globals)
 //   - initRoundBook returns destroyRoundBook, which tears down the charts
 import { Chart, registerables } from 'chart.js';
-import { agg, bench, TOURPROX, fmtDate, dedupeDates, TREND, TREND_MIN_ROUNDS, TREND_ROLL, tUnit, trendModel, trendHeadline } from './metrics';
+import { agg, bench, fmtDate, dedupeDates, TREND, TREND_MIN_ROUNDS, TREND_ROLL, tUnit, trendModel, trendHeadline } from './metrics';
 
 Chart.register(...registerables);
 
@@ -91,9 +91,17 @@ function renderOverview(){
   let cn='';
   if(a.hp&&arcPutBad!==puttBad){
     const here=`here you three-putt <b>${a.threePct.toFixed(0)}%</b> of holes (~${Math.round(bench('tp',D.hcp))}% for your handicap)`;
-    cn=arcPutBad
-      ?`Arccos and this view disagree on putting. Arccos grades it <b>${D.cat.putting.toFixed(1)}</b>, worse than its ${cOv.toFixed(1)} overall, but ${here}. Arccos's grade is account-wide and strokes-gained based, so it weighs each putt by its length. The counts on this page are raw putts from the rounds in view.`
-      :`Arccos and this view disagree on putting. Arccos grades it <b>${D.cat.putting.toFixed(1)}</b>, better than its ${cOv.toFixed(1)} overall, but ${here}. Arccos's grade is account-wide and strokes-gained based, so it weighs each putt by its length. The counts on this page are raw putts from the rounds in view, and Air can log fringe strokes as putts (see the Putting tab).`;
+    cn=`Arccos and this view disagree on putting. Arccos grades it <b>${D.cat.putting.toFixed(1)}</b>, ${arcPutBad?'worse':'better'} than its ${cOv.toFixed(1)} overall, but ${here}. Arccos grades from the rounds it counts toward its own handicap, not the rounds in this filter${arcPutBad?'':', and Air can log fringe strokes as putts (see the Putting tab)'}.`;
+  }
+  // What Arccos actually sent at the last sync (signed, unrounded; the sync stores it as hcpRaw), so any bar can be
+  // checked against the source. A normal handicap arrives negative; exactly 0 or a positive value gets called out.
+  const RAWK=[['putting','puttHcp'],['approach','approachHcp'],['chipping','chipHcp'],['sand','sandHcp'],['driving','driveHcp'],['overall','userHcp']];
+  const hr=D.hcpRaw&&D.hcpRaw.f;
+  if(hr){
+    const has=RAWK.filter(k=>typeof hr[k[1]]==='number'),zero=has.filter(k=>hr[k[1]]===0).map(k=>k[0]),plus=has.filter(k=>hr[k[1]]>0).map(k=>k[0]);
+    cn+=(cn?'<br>':'')+`As sent by Arccos${D.hcpRaw.at?' on '+fmtDate(D.hcpRaw.at.slice(0,10)):''} (a normal handicap comes through negative): ${has.map(k=>k[0]+' '+hr[k[1]]).join(', ')}.`+
+      (zero.length?` Arccos sent exactly 0 for ${zero.join(' and ')}, so that bar may be a missing grade, not a real one.`:'')+
+      (plus.length?` ${plus.join(' and ')} came back positive (a plus handicap); the bar drops the plus sign.`:'');
   }
   $('catNote').innerHTML=cn;
 
@@ -487,7 +495,7 @@ function renderTakeaways(){
   const cR=[['putting',D.cat.putting],['approach',D.cat.approach],['chipping',D.cat.chipping],['sand',D.cat.sand],['driving',D.cat.driving]].sort((x,y)=>x[1]-y[1]);
   const sR=cR.findIndex(c=>c[0]==='sand')+1,sGood=D.cat.sand<=D.cat.overall;
   const sPos=sR===1?'your best of the five categories':sR===2?`second only to ${cR[0][0]}`:`#${sR} of five, behind ${cR.slice(0,sR-1).map(c=>c[0]).join(', ')}`;
-  const sBody=`Arccos grades your sand game ${D.cat.sand.toFixed(1)}, ${sPos}, and ${sGood?'better than':'worse than'} its ${D.cat.overall.toFixed(1)} overall. Account-wide grade; per-shot sand data isn't exportable.`;
+  const sBody=`Arccos grades your sand game ${D.cat.sand.toFixed(1)}, ${sPos}, and ${sGood?'better than':'worse than'} its ${D.cat.overall.toFixed(1)} overall. Arccos's grade, not your filter; per-shot sand data isn't exportable.`;
   if(sGood)s+=takeCard('g','Sand play <span class="aw">all rounds</span>','#'+sR,sBody);
   $('strengths').innerHTML=s;
   // focus (ranked, #1 is hot)
@@ -561,15 +569,15 @@ function renderApproach(){
     plugins:[topLab],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:18}},plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:11}}},y:{grid:{color:GRID},border:{display:false},max:100,title:{display:true,text:'hit green %'},ticks:{callback:v=>v+'%'}}}}});
   charts['apHit'].$fmt=v=>v+'%';charts['apHit'].update();
   draw('apProx',{type:'bar',data:{labels:tl,datasets:[
-    {label:'You',data:labs.map(l=>Math.round(med(A[l].prox))),backgroundColor:'#c9a24a',borderRadius:4,borderSkipped:'start'},
-    {label:'Tour',data:labs.map(l=>TOURPROX[l]||null),backgroundColor:'#39564a',borderRadius:4,borderSkipped:'start'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11}}},tooltip:{enabled:true,callbacks:{label:c=>c.dataset.label+': '+c.parsed.y+' ft'}}},scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:11}}},y:{grid:{color:GRID},border:{display:false},title:{display:true,text:'feet from pin'}}}}});
+    {data:labs.map(l=>Math.round(med(A[l].prox))),backgroundColor:'#c9a24a',borderRadius:4,borderSkipped:'start',barThickness:40}]},
+    plugins:[topLab],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:18}},plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{grid:{display:false},border:{display:false},ticks:{font:{size:11}}},y:{grid:{color:GRID},border:{display:false},title:{display:true,text:'feet from pin'}}}}});
+  charts['apProx'].$fmt=v=>v+' ft';charts['apProx'].update();
   // dynamic insight from wedge band
   const w=A['50-100'];
   const ah=$('apHead'),asub=$('apSub');
   if(w&&w.n>=AP_MIN){const wp=Math.round(med(w.prox));
     ah.textContent=`From wedge range you're leaving it ${wp} feet.`;
-    asub.innerHTML=`From 50–100 yards you finish about <b>${wp} ft</b> from the pin (tour ~${TOURPROX['50-100']} ft) and hit the green <b>${Math.round(100*w.hit/w.n)}%</b> of the time. Tighter approaches here is the upstream fix for both leaks — closer shots mean more greens hit and shorter first putts on the ones you do.`;}
+    asub.innerHTML=`From 50 to 100 yards you finish about <b>${wp} ft</b> from the pin and hit the green <b>${Math.round(100*w.hit/w.n)}%</b> of the time, over ${w.n} shots.`;}
   else {ah.textContent='Approach proximity by distance.';asub.textContent='Not enough approach shots in this filter to break down.';}
 
   // --- proximity by club + miss pattern (from agr: [club,startYd,proxFt,crossFt,alongFt]) ---
